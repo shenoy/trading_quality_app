@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Trade #{{ trade.id }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">Trading Tracker</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/">Dashboard & Chart</a>
+                <a class="nav-link" href="/trades-list">View All Trades</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-3">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card shadow-sm p-4">
+                    <h3 class="card-title mb-3">Edit Trade #{{ trade.id }}</h3>
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label class="form-label">1) Setup Quality</label>
+                            <select class="form-select" name="setup_quality" required>
+                                <option value="good" {% if trade.setup_quality_str == 'good' %}selected{% endif %}>Good</option>
+                                <option value="medium" {% if trade.setup_quality_str == 'medium' %}selected{% endif %}>Medium</option>
+                                <option value="bad" {% if trade.setup_quality_str == 'bad' %}selected{% endif %}>Bad</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">2) Ticker Symbol</label>
+                            <input type="text" class="form-control" name="ticker" value="{{ trade.ticker }}" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">3) Entry Date & Time</label>
+                            <input type="datetime-local" class="form-control" name="entry_datetime" value="{{ trade.entry_datetime }}" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">4) 1/3rd Profit Taken?</label>
+                            <select class="form-select" name="profit_taken" required>
+                                <option value="yes" {% if trade.profit_taken_str == 'yes' %}selected{% endif %}>Yes</option>
+                                <option value="no" {% if trade.profit_taken_str == 'no' %}selected{% endif %}>No</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">5) Stop Loss Moved to Zero?</label>
+                            <select class="form-select" name="stop_loss_zero" required>
+                                <option value="yes" {% if trade.stop_loss_zero_str == 'yes' %}selected{% endif %}>Yes</option>
+                                <option value="no" {% if trade.stop_loss_zero_str == 'no' %}selected{% endif %}>No</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">6) Current Equity ($)</label>
+                            <input type="number" step="any" class="form-control" name="current_equity" value="{{ trade.current_equity }}" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">7) Risk Amount ($)</label>
+                            <input type="number" step="any" class="form-control" name="risk_val" value="{{ trade.risk_str }}" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">8) Risk:Reward Ratio (R:R)</label>
+                            <input type="number" step="any" class="form-control" name="risk_reward_val" value="{{ trade.risk_reward_str }}" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">9) Risk over 0.5%?</label>
+                            <select class="form-select" name="risk_over_half" required>
+                                <option value="yes" {% if trade.risk_over_half_str == 'yes' %}selected{% endif %}>Yes</option>
+                                <option value="no" {% if trade.risk_over_half_str == 'no' %}selected{% endif %}>No</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">10) Daily risk under -1.5%?</label>
+                            <select class="form-select" name="daily_risk" required>
+                                <option value="yes" {% if trade.daily_risk_str == 'yes' %}selected{% endif %}>Yes</option>
+                                <option value="no" {% if trade.daily_risk_str == 'no' %}selected{% endif %}>No</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 mb-2">Update Trade</button>
+                        <a href="/trades-list" class="btn btn-secondary w-100">Cancel</a>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

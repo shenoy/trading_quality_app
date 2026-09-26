@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Trades List</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">Trading Tracker</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/">Dashboard & Chart</a>
+                <a class="nav-link active" href="/trades-list">View All Trades</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-3">
+        <h2 class="mb-4">Logged Trades History</h2>
+        
+        <div class="card shadow-sm p-4">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>ID</th>
+                            <th>Ticker</th>
+                            <th>Date/Time</th>
+                            <th>Setup</th>
+                            <th>1/3 Profit</th>
+                            <th>SL Zero</th>
+                            <th>Risk ($)</th>
+                            <th>R:R</th>
+                            <th>Risk > 0.5%</th>
+                            <th>Daily Risk < -1.5%</th>
+                            <th>Equity</th>
+                            <th>Total Score</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for trade in trades %}
+                        <tr>
+                            <td>{{ trade.id }}</td>
+                            <td><strong>{{ trade.ticker }}</strong></td>
+                            <td>{{ trade.entry_datetime.replace('T', ' ') }}</td>
+                            <td><span class="badge bg-secondary">{{ trade.setup_quality_str }}</span></td>
+                            <td>{{ trade.profit_taken_str | capitalize }}</td>
+                            <td>{{ trade.stop_loss_zero_str | capitalize }}</td>
+                            <td>${{ trade.risk_str }}</td>
+                            <td>{{ trade.risk_reward_str }}</td>
+                            <td>{{ trade.risk_over_half_str | capitalize }}</td>
+                            <td>{{ trade.daily_risk_str | capitalize }}</td>
+                            <td>${{ "%.2f"|format(trade.current_equity) }}</td>
+                            <td><span class="badge bg-success fs-6">{{ trade.total_score }}</span></td>
+                            <td>
+                                <a href="/trade/edit/{{ trade.id }}" class="btn btn-sm btn-warning">Edit</a>
+                                <form action="/trade/delete/{{ trade.id }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this trade?');">
+                                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="13" class="text-center text-muted py-4">No trades logged yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

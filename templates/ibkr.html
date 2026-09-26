@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IBKR Trades Tracker</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">Trading Tracker</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/">Dashboard & Chart</a>
+                <a class="nav-link" href="/trades-list">View All Trades</a>
+                <a class="nav-link active" href="/ibkr">IBKR Trades</a>
+                <a class="nav-link" href="/settings">Settings</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-3">
+        <h2 class="mb-4">IBKR Trades Management</h2>
+
+        <div class="row g-4">
+            <!-- Form Card -->
+            <div class="col-lg-4">
+                <div class="card shadow-sm p-4">
+                    <h4 class="card-title mb-3">Log IBKR Trade</h4>
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label class="form-label">Ticker Symbol</label>
+                            <input type="text" class="form-control" name="ticker" placeholder="e.g., TSLA, SPY" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Time Entered</label>
+                            <input type="datetime-local" class="form-control" name="time_entered" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Time Exited</label>
+                            <input type="datetime-local" class="form-control" name="time_exited" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Entry Price ($)</label>
+                            <input type="number" step="any" class="form-control" name="entry_price" placeholder="e.g., 150.25" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Exit Price ($)</label>
+                            <input type="number" step="any" class="form-control" name="exit_price" placeholder="e.g., 155.50" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Profit & Loss ($)</label>
+                            <input type="number" step="any" class="form-control" id="pnlInput" name="pnl" placeholder="e.g., 150.50 or -45.00" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Ending Balance ($)</label>
+                            <input type="number" step="any" class="form-control" id="balanceInput" name="balance" placeholder="e.g., 12500" required>
+                            <div class="form-text mt-1">
+                                Calculated P&L %: <span id="pnlPercentDisplay" class="fw-bold text-muted">--</span>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100">Add IBKR Trade</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Table Card -->
+            <div class="col-lg-8">
+                <div class="card shadow-sm p-4">
+                    <h4 class="card-title mb-3">Logged IBKR History</h4>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover align-middle">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Ticker</th>
+                                    <th>Entered</th>
+                                    <th>Exited</th>
+                                    <th>Entry Price</th>
+                                    <th>Exit Price</th>
+                                    <th>Profit/Loss</th>
+                                    <th>Return %</th>
+                                    <th>Balance</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for trade in trades %}
+                                {% set starting_balance = trade.balance - trade.pnl %}
+                                {% set pct = (trade.pnl / starting_balance * 100) if starting_balance > 0 else 0 %}
+                                <tr>
+                                    <td>{{ trade.id }}</td>
+                                    <td><strong>{{ trade.ticker }}</strong></td>
+                                    <td>{{ trade.time_entered.replace('T', ' ') }}</td>
+                                    <td>{{ trade.time_exited.replace('T', ' ') }}</td>
+                                    <td>${{ "%.2f"|format(trade.entry_price) }}</td>
+                                    <td>${{ "%.2f"|format(trade.exit_price) }}</td>
+                                    <td>
+                                        <span class="fw-bold {{ 'text-success' if trade.pnl > 0 else ('text-danger' if trade.pnl < 0 else '') }}">
+                                            ${{ "%.2f"|format(trade.pnl) }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="fw-bold {{ 'text-success' if pct > 0 else ('text-danger' if pct < 0 else '') }}">
+                                            {{ "%.2f"|format(pct) }}%
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="fw-bold">
+                                            ${{ "%.2f"|format(trade.balance) }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex gap-1">
+                                            <a href="/ibkr/edit/{{ trade.id }}" class="btn btn-sm btn-warning">Edit</a>
+                                            <form action="/ibkr/delete/{{ trade.id }}" method="POST" onsubmit="return confirm('Delete this IBKR trade?');">
+                                                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="10" class="text-center text-muted py-4">No IBKR trades logged yet.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript for Live Form P&L % Calculation -->
+    <script>
+        const pnlInput = document.getElementById('pnlInput');
+        const balanceInput = document.getElementById('balanceInput');
+        const display = document.getElementById('pnlPercentDisplay');
+
+        function updatePercentage() {
+            const pnl = parseFloat(pnlInput.value) || 0;
+            const balance = parseFloat(balanceInput.value) || 0;
+            const startingBalance = balance - pnl;
+
+            if (startingBalance > 0) {
+                const pct = (pnl / startingBalance) * 100;
+                display.textContent = `${pct.toFixed(2)}%`;
+                display.className = pct >= 0 ? 'fw-bold text-success' : 'fw-bold text-danger';
+            } else {
+                display.textContent = '--';
+                display.className = 'fw-bold text-muted';
+            }
+        }
+
+        pnlInput.addEventListener('input', updatePercentage);
+        balanceInput.addEventListener('input', updatePercentage);
+    </script>
+</body>
+</html>

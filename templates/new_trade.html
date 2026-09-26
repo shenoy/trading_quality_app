@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log New Trade</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+    <div class="container">
+        <a class="navbar-brand" href="/">Trading Tracker</a>
+        <div class="navbar-nav">
+            <a class="nav-link" href="/">Dashboard & Charts</a>
+            <a class="nav-link" href="/trades-list">View All Trades</a>
+            <a class="nav-link" href="/ibkr">IBKR Trades</a>
+            <a class="nav-link" href="/settings">Settings</a>
+        </div>
+    </div>
+    </nav>
+
+    <div class="container py-3">
+        <div class="row justify-content-center">
+            <div class="col-lg-7">
+                <div class="card shadow-sm p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h2 class="card-title m-0">Log New Trade</h2>
+                        <a href="/" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
+                    </div>
+                    <form id="tradeForm">
+                        <div class="mb-3">
+                            <label class="form-label">1) Setup Quality</label>
+                            <select class="form-select" id="setup_quality" required>
+                                <option value="good">Good (Score: 1)</option>
+                                <option value="medium">Medium (Score: 0.5)</option>
+                                <option value="bad">Bad (Score: 0)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">2) Ticker Symbol</label>
+                            <input type="text" class="form-control" id="ticker" placeholder="e.g., AAPL, EURUSD" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">3) Entry Date & Time</label>
+                            <input type="datetime-local" class="form-control" id="entry_datetime" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">4) 1/3rd Profit Taken?</label>
+                            <select class="form-select" id="profit_taken" required>
+                                <option value="yes">Yes (Score: 1)</option>
+                                <option value="no">No (Score: 0)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">5) Stop Loss Moved to Zero?</label>
+                            <select class="form-select" id="stop_loss_zero" required>
+                                <option value="yes">Yes (Score: 1)</option>
+                                <option value="no">No (Score: 0)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">6) Current Equity ($)</label>
+                            <input type="number" step="any" class="form-control" id="current_equity" placeholder="e.g., 10500" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">7) Risk Amount ($)</label>
+                            <input type="number" step="any" class="form-control" id="risk_val" placeholder="e.g., 15" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">8) Risk:Reward Ratio (R:R)</label>
+                            <input type="number" step="any" class="form-control" id="risk_reward_val" placeholder="e.g., 2.5" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">9) Risk over 0.5%?</label>
+                            <select class="form-select" id="risk_over_half" required>
+                                <option value="yes">Yes (Score: -5)</option>
+                                <option value="no">No (Score: +1)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">10) Daily risk under -1.5%?</label>
+                            <select class="form-select" id="daily_risk" required>
+                                <option value="yes">Yes (Score: 1)</option>
+                                <option value="no">No (Score: -5)</option>
+                            </select>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary flex-grow-1">Submit Trade</button>
+                            <a href="/" class="btn btn-secondary">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('tradeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const payload = {
+                setup_quality: document.getElementById('setup_quality').value,
+                ticker: document.getElementById('ticker').value,
+                entry_datetime: document.getElementById('entry_datetime').value,
+                profit_taken: document.getElementById('profit_taken').value,
+                stop_loss_zero: document.getElementById('stop_loss_zero').value,
+                current_equity: document.getElementById('current_equity').value,
+                risk_val: document.getElementById('risk_val').value,
+                risk_reward_val: document.getElementById('risk_reward_val').value,
+                risk_over_half: document.getElementById('risk_over_half').value,
+                daily_risk: document.getElementById('daily_risk').value,
+            };
+
+            const response = await fetch('/api/trades', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                // Redirect back to dashboard to view charts
+                window.location.href = '/';
+            } else {
+                alert('Error saving trade.');
+            }
+        });
+    </script>
+</body>
+</html>
