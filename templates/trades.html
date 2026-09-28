@@ -20,12 +20,13 @@
 
     <div class="container py-3">
         <h2 class="mb-4">Logged Trades History</h2>
-        
+
         <div class="card shadow-sm p-4">
             <div class="table-responsive">
                 <table class="table table-striped table-hover align-middle">
                     <thead class="table-dark">
                         <tr>
+                            <th>Order</th>
                             <th>ID</th>
                             <th>Ticker</th>
                             <th>Date/Time</th>
@@ -44,6 +45,12 @@
                     <tbody>
                         {% for trade in trades %}
                         <tr>
+                            <td>
+                                <!-- Move Up Button -->
+                                <a href="/trade/move/{{ trade.id }}/up" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Move Up">▲</a>
+                                <!-- Move Down Button -->
+                                <a href="/trade/move/{{ trade.id }}/down" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Move Down">▼</a>
+                            </td>
                             <td>{{ trade.id }}</td>
                             <td><strong>{{ trade.ticker }}</strong></td>
                             <td>{{ trade.entry_datetime.replace('T', ' ') }}</td>
@@ -57,15 +64,17 @@
                             <td>${{ "%.2f"|format(trade.current_equity) }}</td>
                             <td><span class="badge bg-success fs-6">{{ trade.total_score }}</span></td>
                             <td>
-                                <a href="/trade/edit/{{ trade.id }}" class="btn btn-sm btn-warning">Edit</a>
-                                <form action="/trade/delete/{{ trade.id }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this trade?');">
-                                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-                                </form>
+                                <div class="d-flex gap-1">
+                                    <a href="/trade/edit/{{ trade.id }}" class="btn btn-sm btn-warning">Edit</a>
+                                    <form action="/trade/delete/{{ trade.id }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this trade?');">
+                                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="13" class="text-center text-muted py-4">No trades logged yet.</td>
+                            <td colspan="14" class="text-center text-muted py-4">No trades logged yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

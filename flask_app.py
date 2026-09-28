@@ -15,6 +15,9 @@ db = SQLAlchemy(app)
 
 class Trade(db.Model):
   id = db.Column(db.Integer, primary_key=True)
+  position = db.Column(
+      db.Integer, default=0
+  )  # New column to track custom order
   setup_quality_str = db.Column(db.String(20), nullable=False)
   ticker = db.Column(db.String(20), nullable=False)
   entry_datetime = db.Column(db.String(50), nullable=False)
@@ -168,7 +171,7 @@ def new_trade_page():
 
 @app.route('/trades-list')
 def trades_list():
-  all_trades = Trade.query.order_by(Trade.id.asc()).all()
+  all_trades = Trade.query.order_by(Trade.position.asc()).all()
   return render_template('trades.html', trades=all_trades)
 
 
@@ -217,46 +220,87 @@ def delete_trade(id):
 
 @app.route('/api/trades', methods=['GET', 'POST'])
 def manage_trades():
-  if request.method == 'POST':
-    data = request.json
-    scores = calculate_scores(data)
+    if request.method == 'POST':
+        data = request.json
+        scores = calculate_scores(data)
+        max_pos = db.session.query(db.func.max(Trade.position)).scalar() or 0
+        new_trade = Trade(
+            position=max_pos + 1,
+            setup_quality_str=data.get('setup_quality'),
+            ticker=data.get('ticker'),
+            entry_datetime=data.get('entry_datetime'),
+            profit_taken_str=data.get('profit_taken'),
+            stop_loss_zero_str=data.get('stop_loss_zero'),
+            current_equity=float(data.get('current_equity', 0)),
+            risk_str=str(data.get('risk_val')),
+            risk_reward_str=str(data.get('risk_reward_val')),
+            setup_score=scores['setup_score'],
+            profit_score=scores['profit_score'],
+            stop_loss_score=scores['stop_loss_score'],
+            risk_score=scores['risk_score'],
+            risk_reward_score=scores['risk_reward_score'],
+            total_score=scores['total_score'],
+        )
+        db.session.add(new_trade)
+        db.session.commit()
+        return jsonify({'status': 'success', 'total_score': scores['total_score']})
 
-    new_trade = Trade(
-        setup_quality_str=data.get('setup_quality'),
-        ticker=data.get('ticker'),
-        entry_datetime=data.get('entry_datetime'),
-        profit_taken_str=data.get('profit_taken'),
-        stop_loss_zero_str=data.get('stop_loss_zero'),
-        current_equity=float(data.get('current_equity', 0)),
-        risk_str=str(data.get('risk_val')),
-        risk_reward_str=str(data.get('risk_reward_val')),
-        setup_score=scores['setup_score'],
-        profit_score=scores['profit_score'],
-        stop_loss_score=scores['stop_loss_score'],
-        risk_score=scores['risk_score'],
-        risk_reward_score=scores['risk_reward_score'],
-        total_score=scores['total_score'],
+    # GET request handler (properly nested inside the route function)
+    trades = Trade.query.order_by(Trade.position.asc()).all()
+    result = []
+    for t in trades:
+        result.append({
+            'id': t.id,
+            'ticker': t.ticker,
+            'entry_datetime': t.entry_datetime,
+            'current_equity': t.current_equity,
+            'risk_val': float(t.risk_str) if t.risk_str else 0.0,
+            'risk_reward_str': float(t.risk_reward_str) if t.risk_reward_str else 0.0,  # Fixed key name to match frontend
+            'total_score': t.total_score,
+        })
+    return jsonify(result)
+# GET: Fetch trades ordered by their custom position sequence
+    trades = Trade.query.order_by(Trade.position.asc()).all()
+    result = []
+    for t in trades:
+        result.append({
+            'id': t.id,
+            'ticker': t.ticker,
+            'entry_datetime': t.entry_datetime,
+            'current_equity': t.current_equity,
+            'risk_val': float(t.risk_str) if t.risk_str else 0.0,
+            'risk_reward_str': float(t.risk_reward_str) if t.risk_reward_str else 0.0,
+            'total_score': t.total_score,
+        })
+    return jsonify(result)
+
+@app.route('/trade/move/<int:id>/<direction>')
+def move_trade(id, direction):
+  trade = Trade.query.get_or_404(id)
+
+  if direction == 'up':
+    # Find the trade directly above it (highest position lower than current)
+    adjacent = (
+        Trade.query.filter(Trade.position < trade.position)
+        .order_by(Trade.position.desc())
+        .first()
     )
-    db.session.add(new_trade)
+  elif direction == 'down':
+    # Find the trade directly below it (lowest position higher than current)
+    adjacent = (
+        Trade.query.filter(Trade.position > trade.position)
+        .order_by(Trade.position.asc())
+        .first()
+    )
+  else:
+    adjacent = None
+
+  if adjacent:
+    # Swap their positions
+    trade.position, adjacent.position = adjacent.position, trade.position
     db.session.commit()
-    return jsonify({'status': 'success', 'total_score': scores['total_score']})
 
-  trades = Trade.query.order_by(Trade.id.asc()).all()
-  result = []
-  for t in trades:
-    result.append({
-        'id': t.id,
-        'ticker': t.ticker,
-        'entry_datetime': t.entry_datetime,
-        'current_equity': t.current_equity,
-        'risk_val': float(t.risk_str) if t.risk_str else 0.0,
-        'risk_reward_str': (
-            float(t.risk_reward_str) if t.risk_reward_str else 0.0
-        ),
-        'total_score': t.total_score,
-    })
-  return jsonify(result)
-
+  return redirect(url_for('trades_list'))
 
 # --- IBKR TRADES ROUTES ---
 
