@@ -27,6 +27,9 @@ class Trade(db.Model):
   risk_str = db.Column(db.String(20), nullable=False)
   risk_reward_str = db.Column(db.String(20), nullable=False)
 
+  risk_over_half_str = db.Column(db.String(10), nullable=True)
+  daily_risk_str = db.Column(db.String(10), nullable=True)
+
   # Scores
   setup_score = db.Column(db.Float, nullable=False)
   profit_score = db.Column(db.Float, nullable=False)
@@ -203,6 +206,9 @@ def edit_trade(id):
     trade.risk_score = scores['risk_score']
     trade.risk_reward_score = scores['risk_reward_score']
     trade.total_score = scores['total_score']
+    # Inside your trade edit POST logic:
+    trade.risk_over_half_str = request.form.get('risk_over_half', 'no')
+    trade.daily_risk_str = request.form.get('daily_risk', 'no')
 
     db.session.commit()
     return redirect(url_for('trades_list'))
@@ -234,6 +240,9 @@ def manage_trades():
             current_equity=float(data.get('current_equity', 0)),
             risk_str=str(data.get('risk_val')),
             risk_reward_str=str(data.get('risk_reward_val')),
+            # Make sure these keys match what your frontend JS sends:
+            risk_over_half_str=data.get('risk_over_half', 'no'),
+            daily_risk_str=data.get('daily_risk', 'no'),
             setup_score=scores['setup_score'],
             profit_score=scores['profit_score'],
             stop_loss_score=scores['stop_loss_score'],
