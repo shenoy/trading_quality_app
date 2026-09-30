@@ -17,6 +17,8 @@
         .chart-container.medium { height: 350px; }
         .chart-container.large { height: 520px; }
     </style>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='tracker.svg') }}">
+
 </head>
 <body class="bg-light">
     <!-- Navbar -->
@@ -24,6 +26,9 @@
     <div class="container">
         <a class="navbar-brand" href="/">Trading Tracker</a>
         <div class="navbar-nav">
+                <a class="navbar-brand d-flex align-items-center" href="/">
+                <img src="{{ url_for('static', filename='tracker.svg') }}" alt="Trading Tracker Logo" height="35">
+                </a>
             <a class="nav-link active" href="/">Dashboard & Charts</a>
             <a class="nav-link" href="/trades-list">View All Trades</a>
             <a class="nav-link" href="/ibkr">IBKR Trades</a>
