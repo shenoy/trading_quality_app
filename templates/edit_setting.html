@@ -23,14 +23,14 @@
             <div class="col-md-6">
                 <div class="card shadow-sm p-4">
                     <h3 class="card-title mb-3">Edit Rule: {{ rule.category }}</h3>
+                    {% if error %}
+                    <div class="alert alert-danger">{{ error }}</div>
+                    {% endif %}
                     <form method="POST">
                         <div class="mb-3">
-                            <label class="form-label">Category Name</label>
-                            <input type="text" class="form-control" name="category" value="{{ rule.category }}" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Adjust Scoring Thresholds / Points</label>
+                            <label class="form-label">Points</label>
                             <input type="text" class="form-control" name="points" value="{{ rule.points }}" required>
+                            <div class="form-text">{{ hint }}. Separate the numbers with "/" or ",".</div>
                         </div>
                         <button type="submit" class="btn btn-primary w-100 mb-2">Save Changes</button>
                         <a href="/settings" class="btn btn-secondary w-100">Cancel</a>

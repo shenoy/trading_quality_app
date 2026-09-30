@@ -75,18 +75,50 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">9) Risk over 0.5%?</label>
-                            <select class="form-select" name="risk_over_half" required>
-                                <option value="yes" {% if trade.risk_over_half_str == 'yes' %}selected{% endif %}>Yes</option>
-                                <option value="no" {% if trade.risk_over_half_str == 'no' %}selected{% endif %}>No</option>
+                            <label class="form-label">9) Risk under 0.5%?</label>
+                            <select class="form-select" name="risk_under_half" required>
+                                <option value="yes" {% if trade.risk_under_half_str == 'yes' %}selected{% endif %}>Yes</option>
+                                <option value="no" {% if trade.risk_under_half_str == 'no' %}selected{% endif %}>No</option>
                             </select>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">10) Daily risk under -1.5%?</label>
+                            <label class="form-label">10) Daily drawdown under 1.5%?</label>
                             <select class="form-select" name="daily_risk" required>
                                 <option value="yes" {% if trade.daily_risk_str == 'yes' %}selected{% endif %}>Yes</option>
                                 <option value="no" {% if trade.daily_risk_str == 'no' %}selected{% endif %}>No</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">11) Overtrading?</label>
+                            <select class="form-select" name="overtrading" required>
+                                <option value="no" {% if trade.overtrading_str != 'yes' %}selected{% endif %}>No</option>
+                                <option value="yes" {% if trade.overtrading_str == 'yes' %}selected{% endif %}>Yes</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">12) Revenge trading?</label>
+                            <select class="form-select" name="revenge_trading" required>
+                                <option value="no" {% if trade.revenge_trading_str != 'yes' %}selected{% endif %}>No</option>
+                                <option value="yes" {% if trade.revenge_trading_str == 'yes' %}selected{% endif %}>Yes</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">13) Impatient trading?</label>
+                            <select class="form-select" name="impatient_trading" required>
+                                <option value="no" {% if trade.impatient_trading_str != 'yes' %}selected{% endif %}>No</option>
+                                <option value="yes" {% if trade.impatient_trading_str == 'yes' %}selected{% endif %}>Yes</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">14) Fearful trading?</label>
+                            <select class="form-select" name="fearful_trading" required>
+                                <option value="no" {% if trade.fearful_trading_str != 'yes' %}selected{% endif %}>No</option>
+                                <option value="yes" {% if trade.fearful_trading_str == 'yes' %}selected{% endif %}>Yes</option>
                             </select>
                         </div>
 

@@ -32,9 +32,9 @@
                         <div class="mb-3">
                             <label class="form-label">1) Setup Quality</label>
                             <select class="form-select" id="setup_quality" required>
-                                <option value="good">Good (Score: 1)</option>
-                                <option value="medium">Medium (Score: 0.5)</option>
-                                <option value="bad">Bad (Score: 0)</option>
+                                <option value="good">Good (Score: {{ "%g"|format(pts['setup_good'][0]) }})</option>
+                                <option value="medium">Medium (Score: {{ "%g"|format(pts['setup_good'][1]) }})</option>
+                                <option value="bad">Bad (Score: {{ "%g"|format(pts['setup_good'][2]) }})</option>
                             </select>
                         </div>
 
@@ -51,16 +51,16 @@
                         <div class="mb-3">
                             <label class="form-label">4) 1/3rd Profit Taken?</label>
                             <select class="form-select" id="profit_taken" required>
-                                <option value="yes">Yes (Score: 1)</option>
-                                <option value="no">No (Score: 0)</option>
+                                <option value="yes">Yes (Score: {{ "%g"|format(pts['profit_yes'][0]) }})</option>
+                                <option value="no">No (Score: {{ "%g"|format(pts['profit_yes'][1]) }})</option>
                             </select>
                         </div>
 
                         <div class="mb-3">
                             <label class="form-label">5) Stop Loss Moved to Zero?</label>
                             <select class="form-select" id="stop_loss_zero" required>
-                                <option value="yes">Yes (Score: 1)</option>
-                                <option value="no">No (Score: 0)</option>
+                                <option value="yes">Yes (Score: {{ "%g"|format(pts['sl_yes'][0]) }})</option>
+                                <option value="no">No (Score: {{ "%g"|format(pts['sl_yes'][1]) }})</option>
                             </select>
                         </div>
 
@@ -80,18 +80,50 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">9) Risk over 0.5%?</label>
-                            <select class="form-select" id="risk_over_half" required>
-                                <option value="yes">Yes (Score: -5)</option>
-                                <option value="no">No (Score: +1)</option>
+                            <label class="form-label">9) Risk under 0.5%?</label>
+                            <select class="form-select" id="risk_under_half" required>
+                                <option value="yes">Yes (Score: {{ "%g"|format(pts['risk_under_half'][0]) }})</option>
+                                <option value="no">No (Score: {{ "%g"|format(pts['risk_under_half'][1]) }})</option>
                             </select>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">10) Daily risk under -1.5%?</label>
+                            <label class="form-label">10) Daily drawdown under 1.5%?</label>
                             <select class="form-select" id="daily_risk" required>
-                                <option value="yes">Yes (Score: 1)</option>
-                                <option value="no">No (Score: -5)</option>
+                                <option value="yes">Yes (Score: {{ "%g"|format(pts['daily_dd'][0]) }})</option>
+                                <option value="no">No (Score: {{ "%g"|format(pts['daily_dd'][1]) }})</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">11) Overtrading?</label>
+                            <select class="form-select" id="overtrading" required>
+                                <option value="no">No (Score: {{ "%g"|format(pts['overtrading_yes'][1]) }})</option>
+                                <option value="yes">Yes (Score: {{ "%g"|format(pts['overtrading_yes'][0]) }})</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">12) Revenge trading?</label>
+                            <select class="form-select" id="revenge_trading" required>
+                                <option value="no">No (Score: {{ "%g"|format(pts['revenge_yes'][1]) }})</option>
+                                <option value="yes">Yes (Score: {{ "%g"|format(pts['revenge_yes'][0]) }})</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">13) Impatient trading?</label>
+                            <select class="form-select" id="impatient_trading" required>
+                                <option value="no">No (Score: {{ "%g"|format(pts['impatient_yes'][1]) }})</option>
+                                <option value="yes">Yes (Score: {{ "%g"|format(pts['impatient_yes'][0]) }})</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">14) Fearful trading?</label>
+                            <select class="form-select" id="fearful_trading" required>
+                                <option value="no">No (Score: {{ "%g"|format(pts['fearful_yes'][1]) }})</option>
+                                <option value="yes">Yes (Score: {{ "%g"|format(pts['fearful_yes'][0]) }})</option>
                             </select>
                         </div>
 
@@ -118,8 +150,12 @@
                 current_equity: document.getElementById('current_equity').value,
                 risk_val: document.getElementById('risk_val').value,
                 risk_reward_val: document.getElementById('risk_reward_val').value,
-                risk_over_half: document.getElementById('risk_over_half').value,
+                risk_under_half: document.getElementById('risk_under_half').value,
                 daily_risk: document.getElementById('daily_risk').value,
+                overtrading: document.getElementById('overtrading').value,
+                revenge_trading: document.getElementById('revenge_trading').value,
+                impatient_trading: document.getElementById('impatient_trading').value,
+                fearful_trading: document.getElementById('fearful_trading').value,
             };
 
             const response = await fetch('/api/trades', {

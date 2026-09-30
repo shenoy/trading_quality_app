@@ -1,6 +1,8 @@
+import re
 from datetime import datetime
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text
 
 app = Flask(__name__)
 
@@ -27,8 +29,16 @@ class Trade(db.Model):
   risk_str = db.Column(db.String(20), nullable=False)
   risk_reward_str = db.Column(db.String(20), nullable=False)
 
-  risk_over_half_str = db.Column(db.String(10), nullable=True)
+  # 'yes' = risk was under 0.5%.  (The old 'risk_over_half_str' column is
+  # left in the database untouched but is no longer used.)
+  risk_under_half_str = db.Column(db.String(10), nullable=True)
   daily_risk_str = db.Column(db.String(10), nullable=True)
+
+  # Psychology answers: 'yes' = that bad behaviour happened on this trade
+  overtrading_str = db.Column(db.String(10), nullable=True, default='no')
+  revenge_trading_str = db.Column(db.String(10), nullable=True, default='no')
+  impatient_trading_str = db.Column(db.String(10), nullable=True, default='no')
+  fearful_trading_str = db.Column(db.String(10), nullable=True, default='no')
 
   # Scores
   setup_score = db.Column(db.Float, nullable=False)
@@ -36,8 +46,24 @@ class Trade(db.Model):
   stop_loss_score = db.Column(db.Float, nullable=False)
   risk_score = db.Column(db.Float, nullable=False)
   risk_reward_score = db.Column(db.Float, nullable=False)
+  daily_risk_score = db.Column(db.Float, nullable=True, default=0.0)
+  psychology_score = db.Column(db.Float, nullable=True, default=0.0)
   total_score = db.Column(db.Float, nullable=False)
   timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+  @property
+  def psychology_flags(self):
+    """Names of the psychology questions answered 'yes' (for the trades list)."""
+    flags = []
+    if self.overtrading_str == 'yes':
+      flags.append('Overtrading')
+    if self.revenge_trading_str == 'yes':
+      flags.append('Revenge')
+    if self.impatient_trading_str == 'yes':
+      flags.append('Impatient')
+    if self.fearful_trading_str == 'yes':
+      flags.append('Fearful')
+    return flags
 
 
 class IBKRTrade(db.Model):
@@ -72,83 +98,183 @@ with app.app_context():
 
 # --- SCORING HELPER LOGIC ---
 
+# Each scoring rule is stored in AppSetting as ONE text value of numbers
+# separated by "/" or ",", e.g. "1 / 0.5 / 0" or "2,4,6,8,10".
+# 'count' is how many numbers the rule needs, 'defaults' is used when nothing
+# valid is saved, and 'hint' explains the order on the edit page.
+SCORING_RULES = {
+    'setup_good': {
+        'count': 3, 'defaults': [1.0, 0.5, 0.0],
+        'hint': 'Points for: Good / Medium / Bad',
+    },
+    'profit_yes': {
+        'count': 2, 'defaults': [1.0, 0.0],
+        'hint': 'Points for: Yes / No',
+    },
+    'sl_yes': {
+        'count': 2, 'defaults': [1.0, 0.0],
+        'hint': 'Points for: Yes / No',
+    },
+    'risk_under_half': {
+        'count': 2, 'defaults': [5.0, -5.0],
+        'hint': 'Points for "Risk under 0.5%?": Yes / No',
+    },
+    'daily_dd': {
+        'count': 2, 'defaults': [5.0, -5.0],
+        'hint': 'Points for "Daily drawdown under 1.5%?": Yes / No',
+    },
+    'rr_bands': {
+        'count': 6, 'defaults': [-5.0, 1.0, 5.0, 15.0, 100.0, 200.0],
+        'hint': (
+            'Points for R:R in this order: below 0 / 0 to 0.5 / 0.5 to 1 / '
+            '1 to 2 / 2 to 3 / 3 and over'
+        ),
+    },
+    # Psychology questions: first number = points if the answer is Yes
+    # (the bad behaviour happened), second = points if No.
+    'overtrading_yes': {
+        'count': 2, 'defaults': [-1.0, 0.0],
+        'hint': 'Points for "Overtrading?": Yes / No',
+    },
+    'revenge_yes': {
+        'count': 2, 'defaults': [-1.0, 0.0],
+        'hint': 'Points for "Revenge trading?": Yes / No',
+    },
+    'impatient_yes': {
+        'count': 2, 'defaults': [-1.0, 0.0],
+        'hint': 'Points for "Impatient trading?": Yes / No',
+    },
+    'fearful_yes': {
+        'count': 2, 'defaults': [-1.0, 0.0],
+        'hint': 'Points for "Fearful trading?": Yes / No',
+    },
+}
+
+
+def parse_points(text, count):
+  """Turns '1 / 0.5 / 0' or '2,4,6,8,10' into a list of floats.
+
+  Returns None if the text doesn't contain exactly `count` valid numbers.
+  """
+  parts = [p for p in re.split(r'[/,\s]+', str(text or '').strip()) if p]
+  if len(parts) != count:
+    return None
+  try:
+    return [float(p) for p in parts]
+  except ValueError:
+    return None
+
+
+def format_points(points):
+  return ' / '.join(f'{p:g}' for p in points)
+
+
+def get_rule_points(key):
+  """Points for a rule: the saved setting if valid, otherwise the default."""
+  rule = SCORING_RULES[key]
+  setting = AppSetting.query.filter_by(key=key).first()
+  if setting:
+    parsed = parse_points(setting.value, rule['count'])
+    if parsed is not None:
+      return parsed
+  return list(rule['defaults'])
+
+
+def to_float(value):
+  try:
+    return float(value)
+  except (ValueError, TypeError):
+    return 0.0
+
+
+def to_float_or_none(value):
+  try:
+    return float(value)
+  except (ValueError, TypeError):
+    return None
+
+
+def yes_no_points(answer, pts):
+  """pts = [points for yes, points for no]. A missing answer scores 0."""
+  answer = (answer or '').lower()
+  if answer == 'yes':
+    return pts[0]
+  if answer == 'no':
+    return pts[1]
+  return 0.0
+
 
 def calculate_scores(data):
-  # Fetch dynamic settings from database with fallbacks
-  def get_setting_val(key, default):
-    setting = AppSetting.query.filter_by(key=key).first()
-    return setting.value if setting else default
+  # Read the current point values from the settings table (falls back to defaults).
+  setup_pts = get_rule_points('setup_good')       # good, medium, bad
+  profit_pts = get_rule_points('profit_yes')      # yes, no
+  sl_pts = get_rule_points('sl_yes')              # yes, no
+  risk_pts = get_rule_points('risk_under_half')   # yes, no
+  daily_pts = get_rule_points('daily_dd')         # yes, no
+  rr_pts = get_rule_points('rr_bands')            # <0, 0-0.5, 0.5-1, 1-2, 2-3, 3+
 
-  # 1) Setup Quality scores (e.g., stored as comma or slash separated, or logic)
-  sq = data.get('setup_quality', '').lower()
+  # 1) Setup quality
+  sq = (data.get('setup_quality') or '').lower()
   if sq == 'good':
-    setup_score = 1.0
+    setup_score = setup_pts[0]
   elif sq == 'medium':
-    setup_score = 0.5
+    setup_score = setup_pts[1]
+  elif sq == 'bad':
+    setup_score = setup_pts[2]
   else:
     setup_score = 0.0
 
-  # 4) 1/3 rd profit taken
-  pt = data.get('profit_taken', '').lower()
-  profit_score = 1.0 if pt == 'yes' else 0.0
+  # 2) 1/3rd profit taken
+  pt = (data.get('profit_taken') or '').lower()
+  profit_score = profit_pts[0] if pt == 'yes' else profit_pts[1]
 
-  # 5) Stop loss moved to zero
-  sl = data.get('stop_loss_zero', '').lower()
-  stop_loss_score = 1.0 if sl == 'yes' else 0.0
+  # 3) Stop loss moved to zero
+  sl = (data.get('stop_loss_zero') or '').lower()
+  stop_loss_score = sl_pts[0] if sl == 'yes' else sl_pts[1]
 
-  # 7) Risk under (example using dynamic risk threshold setup if desired)
-  try:
-    risk_val = float(data.get('risk_val', 0))
-  except ValueError:
-    risk_val = 0
+  # 4) Risk under 0.5%?  (stored in the risk_score column)
+  risk_score = yes_no_points(data.get('risk_under_half'), risk_pts)
 
-  # You can parse thresholds from AppSetting or keep rule checks
-  if risk_val < 10:
-    risk_score = 1.0
-  elif risk_val < 20:
-    risk_score = 0.5
-  else:
-    risk_score = 0.0
+  # 5) Daily drawdown under 1.5%?
+  daily_risk_score = yes_no_points(data.get('daily_risk'), daily_pts)
 
-  # 8) Risk Reward
-  try:
-    rr_val = float(data.get('risk_reward_val', 0))
-  except ValueError:
-    rr_val = 0
-
-  if rr_val >= 5:
-    rr_score = 5.0
-  elif rr_val >= 4:
-    rr_score = 4.0
-  elif rr_val >= 2:
-    rr_score = 3.0
-  elif rr_val >= 1:
-    rr_score = 2.0
-  elif rr_val > 0.5:
-    rr_score = 1.0
-  else:
+  # 6) Risk:Reward. A band includes its lower number: 0.5 is in "0.5 to 1",
+  #    and exactly 3 is in "3 and over".
+  rr_val = to_float_or_none(data.get('risk_reward_val'))
+  if rr_val is None:
     rr_score = 0.0
+  elif rr_val < 0:
+    rr_score = rr_pts[0]
+  elif rr_val < 0.5:
+    rr_score = rr_pts[1]
+  elif rr_val < 1:
+    rr_score = rr_pts[2]
+  elif rr_val < 2:
+    rr_score = rr_pts[3]
+  elif rr_val < 3:
+    rr_score = rr_pts[4]
+  else:
+    rr_score = rr_pts[5]
 
-  # Handle any additional psychology scores if you added them (overtrading, etc.)
-  overtrading_score = (
-      -1.0 if data.get('overtrading', '').lower() == 'yes' else 0.0
+  # 7) Psychology questions. An unanswered question counts as "No".
+  def psych(field, rule_key):
+    return yes_no_points(data.get(field) or 'no', get_rule_points(rule_key))
+
+  psychology_score = (
+      psych('overtrading', 'overtrading_yes')
+      + psych('revenge_trading', 'revenge_yes')
+      + psych('impatient_trading', 'impatient_yes')
+      + psych('fearful_trading', 'fearful_yes')
   )
-  revenge_score = -1.0 if data.get('revenge_trading', '').lower() == 'yes' else 0.0
-  impatient_score = (
-      -1.0 if data.get('impatient_trading', '').lower() == 'yes' else 0.0
-  )
-  fearful_score = -1.0 if data.get('fearful_trading', '').lower() == 'yes' else 0.0
 
   total_score = (
       setup_score
       + profit_score
       + stop_loss_score
       + risk_score
+      + daily_risk_score
       + rr_score
-      + overtrading_score
-      + revenge_score
-      + impatient_score
-      + fearful_score
+      + psychology_score
   )
 
   return {
@@ -156,9 +282,86 @@ def calculate_scores(data):
       'profit_score': profit_score,
       'stop_loss_score': stop_loss_score,
       'risk_score': risk_score,
+      'daily_risk_score': daily_risk_score,
+      'psychology_score': psychology_score,
       'risk_reward_score': rr_score,
-      'total_score': total_score,
+      'total_score': round(total_score, 4),
   }
+
+
+def apply_scores(trade, scores):
+  trade.setup_score = scores['setup_score']
+  trade.profit_score = scores['profit_score']
+  trade.stop_loss_score = scores['stop_loss_score']
+  trade.risk_score = scores['risk_score']
+  trade.daily_risk_score = scores['daily_risk_score']
+  trade.psychology_score = scores['psychology_score']
+  trade.risk_reward_score = scores['risk_reward_score']
+  trade.total_score = scores['total_score']
+
+
+def recalculate_all_trades():
+  """Re-scores every saved trade using the current settings."""
+  for trade in Trade.query.all():
+    apply_scores(trade, calculate_scores({
+        'setup_quality': trade.setup_quality_str,
+        'profit_taken': trade.profit_taken_str,
+        'stop_loss_zero': trade.stop_loss_zero_str,
+        'risk_under_half': trade.risk_under_half_str,
+        'daily_risk': trade.daily_risk_str,
+        'risk_reward_val': trade.risk_reward_str,
+        'overtrading': trade.overtrading_str,
+        'revenge_trading': trade.revenge_trading_str,
+        'impatient_trading': trade.impatient_trading_str,
+        'fearful_trading': trade.fearful_trading_str,
+    }))
+  db.session.commit()
+
+
+def ensure_schema():
+  """One-time upgrade of an existing database to the current scoring rules.
+
+  - Adds any missing columns (daily/psychology scores, psychology answers,
+    risk_under_half_str).
+  - Fills risk_under_half_str from the old "Risk OVER 0.5%?" answers, flipped
+    (old yes = over = bad  ->  new "under 0.5%?" = no). This only happens in
+    the run that creates the column, so it can never flip twice.
+  - Re-scores every trade once, after the upgrade.
+  """
+  columns = {row[1] for row in db.session.execute(text('PRAGMA table_info(trade)'))}
+  changed = False
+  try:
+    for name, ddl in [
+        ('daily_risk_score', 'REAL DEFAULT 0.0'),
+        ('psychology_score', 'REAL DEFAULT 0.0'),
+        ('overtrading_str', "TEXT DEFAULT 'no'"),
+        ('revenge_trading_str', "TEXT DEFAULT 'no'"),
+        ('impatient_trading_str', "TEXT DEFAULT 'no'"),
+        ('fearful_trading_str', "TEXT DEFAULT 'no'"),
+    ]:
+      if name not in columns:
+        db.session.execute(text(f'ALTER TABLE trade ADD COLUMN {name} {ddl}'))
+        changed = True
+    if 'risk_under_half_str' not in columns:
+      db.session.execute(
+          text('ALTER TABLE trade ADD COLUMN risk_under_half_str TEXT'))
+      if 'risk_over_half_str' in columns:
+        db.session.execute(text(
+            "UPDATE trade SET risk_under_half_str = CASE risk_over_half_str "
+            "WHEN 'yes' THEN 'no' WHEN 'no' THEN 'yes' END"))
+      changed = True
+    db.session.commit()
+  except Exception:
+    db.session.rollback()  # e.g. another worker process already did the upgrade
+    app.logger.exception('Schema upgrade skipped')
+    return
+  if changed:
+    recalculate_all_trades()
+
+
+with app.app_context():
+  ensure_schema()
+
 
 # --- TRADING QUALITY APP ROUTES ---
 
@@ -169,7 +372,8 @@ def index():
 
 @app.route('/new-trade')
 def new_trade_page():
-    return render_template('new_trade.html')
+    pts = {key: get_rule_points(key) for key in SCORING_RULES}
+    return render_template('new_trade.html', pts=pts)
 
 
 @app.route('/trades-list')
@@ -187,8 +391,13 @@ def edit_trade(id):
         'setup_quality': data.get('setup_quality'),
         'profit_taken': data.get('profit_taken'),
         'stop_loss_zero': data.get('stop_loss_zero'),
-        'risk_val': data.get('risk_val'),
         'risk_reward_val': data.get('risk_reward_val'),
+        'risk_under_half': data.get('risk_under_half'),
+        'daily_risk': data.get('daily_risk'),
+        'overtrading': data.get('overtrading'),
+        'revenge_trading': data.get('revenge_trading'),
+        'impatient_trading': data.get('impatient_trading'),
+        'fearful_trading': data.get('fearful_trading'),
     })
 
     trade.setup_quality_str = data.get('setup_quality')
@@ -200,15 +409,13 @@ def edit_trade(id):
     trade.risk_str = str(data.get('risk_val'))
     trade.risk_reward_str = str(data.get('risk_reward_val'))
 
-    trade.setup_score = scores['setup_score']
-    trade.profit_score = scores['profit_score']
-    trade.stop_loss_score = scores['stop_loss_score']
-    trade.risk_score = scores['risk_score']
-    trade.risk_reward_score = scores['risk_reward_score']
-    trade.total_score = scores['total_score']
-    # Inside your trade edit POST logic:
-    trade.risk_over_half_str = request.form.get('risk_over_half', 'no')
-    trade.daily_risk_str = request.form.get('daily_risk', 'no')
+    apply_scores(trade, scores)
+    trade.risk_under_half_str = data.get('risk_under_half')
+    trade.daily_risk_str = data.get('daily_risk')
+    trade.overtrading_str = data.get('overtrading', 'no')
+    trade.revenge_trading_str = data.get('revenge_trading', 'no')
+    trade.impatient_trading_str = data.get('impatient_trading', 'no')
+    trade.fearful_trading_str = data.get('fearful_trading', 'no')
 
     db.session.commit()
     return redirect(url_for('trades_list'))
@@ -240,13 +447,18 @@ def manage_trades():
             current_equity=float(data.get('current_equity', 0)),
             risk_str=str(data.get('risk_val')),
             risk_reward_str=str(data.get('risk_reward_val')),
-            # Make sure these keys match what your frontend JS sends:
-            risk_over_half_str=data.get('risk_over_half', 'no'),
-            daily_risk_str=data.get('daily_risk', 'no'),
+            risk_under_half_str=data.get('risk_under_half'),
+            daily_risk_str=data.get('daily_risk'),
+            overtrading_str=data.get('overtrading', 'no'),
+            revenge_trading_str=data.get('revenge_trading', 'no'),
+            impatient_trading_str=data.get('impatient_trading', 'no'),
+            fearful_trading_str=data.get('fearful_trading', 'no'),
             setup_score=scores['setup_score'],
             profit_score=scores['profit_score'],
             stop_loss_score=scores['stop_loss_score'],
             risk_score=scores['risk_score'],
+            daily_risk_score=scores['daily_risk_score'],
+            psychology_score=scores['psychology_score'],
             risk_reward_score=scores['risk_reward_score'],
             total_score=scores['total_score'],
         )
@@ -383,119 +595,78 @@ def edit_ibkr_trade(id):
 
 # --- SETTINGS ROUTES ---
 
+# id -> (category label, condition text, AppSetting key)
+SETTINGS_PAGE_RULES = {
+    1: ('Setup Quality', 'Good / Medium / Bad', 'setup_good'),
+    2: ('1/3rd Profit Taken', 'Yes / No', 'profit_yes'),
+    3: ('Stop Loss Moved to Zero', 'Yes / No', 'sl_yes'),
+    4: ('Risk < 0.5%', 'Yes / No', 'risk_under_half'),
+    5: ('Daily Drawdown < 1.5%', 'Yes / No', 'daily_dd'),
+    6: ('Risk:Reward Ratio (R:R)',
+        '<0 / 0-0.5 / 0.5-1 / 1-2 / 2-3 / 3+', 'rr_bands'),
+    7: ('Overtrading', 'Yes / No', 'overtrading_yes'),
+    8: ('Revenge Trading', 'Yes / No', 'revenge_yes'),
+    9: ('Impatient Trading', 'Yes / No', 'impatient_yes'),
+    10: ('Fearful Trading', 'Yes / No', 'fearful_yes'),
+}
+
+
+def current_points_text(key):
+  return format_points(get_rule_points(key))
+
 
 @app.route('/settings')
 def settings_page():
-  # Define the rules with their associated database keys
   scoring_rules = [
       {
-          'id': 1,
-          'category': 'Setup Quality',
-          'condition': 'Good / Medium / Bad',
-          'key': 'setup_good',  # Use this to look up current value
-      },
-      {
-          'id': 2,
-          'category': '1/3rd Profit Taken',
-          'condition': 'Yes / No',
-          'key': 'profit_yes',
-      },
-      {
-          'id': 3,
-          'category': 'Stop Loss Moved to Zero',
-          'condition': 'Yes / No',
-          'key': 'sl_yes',
-      },
-      {
-          'id': 4,
-          'category': 'Risk Amount ($)',
-          'condition': '<10 / <20 / <50',
-          'key': 'risk_t1',
-      },
-      {
-          'id': 5,
-          'category': 'Risk:Reward Ratio (R:R)',
-          'condition': '>0.5 / >1 / >2 / >4 / >5',
-          'key': 'rr_t5',
-      },
+          'id': rule_id,
+          'category': category,
+          'condition': condition,
+          'key': key,
+          'points': current_points_text(key),
+      }
+      for rule_id, (category, condition, key) in SETTINGS_PAGE_RULES.items()
   ]
-
-  # Fetch current values from database for each rule and attach them
-  for rule in scoring_rules:
-    setting_item = AppSetting.query.filter_by(key=rule['key']).first()
-    # If found in DB, use it; otherwise fallback to default text
-    rule['points'] = setting_item.value if setting_item else 'Custom'
-
   return render_template('settings.html', rules=scoring_rules)
 
 
 @app.route('/settings/edit/<int:id>', methods=['GET', 'POST'])
 def edit_setting(id):
-  scoring_rules = {
-      1: {'category': 'Setup Quality', 'points': '1 / 0.5 / 0'},
-      2: {'category': '1/3rd Profit Taken', 'points': '1 / 0'},
-      3: {'category': 'Stop Loss Moved to Zero', 'points': '1 / 0'},
-      4: {'category': 'Risk Amount ($)', 'points': '1 / 0.5 / 0'},
-      5: {'category': 'Risk:Reward Ratio (R:R)', 'points': '1 / 2 / 3 / 4 / 5'},
-  }
-
-  setting_keys_map = {
-      1: ('setup_good', 'setup_medium', 'setup_bad'),
-      2: ('profit_yes', 'profit_no'),
-      3: ('sl_yes', 'sl_no'),
-      4: ('risk_t1', 'risk_s1'),
-      5: ('rr_t5', 'rr_s5'),
-  }
-
-  rule = scoring_rules.get(id, {'category': 'Unknown', 'points': ''})
-
-  if request.method == 'POST':
-    new_points = request.form.get('points')
-    keys = setting_keys_map.get(id, [])
-
-    if keys:
-      setting_obj = AppSetting.query.filter_by(key=keys[0]).first()
-      if setting_obj:
-        setting_obj.value = str(new_points)
-      else:
-        new_setting = AppSetting(key=keys[0], value=str(new_points))
-        db.session.add(new_setting)
-      db.session.commit()
-
-      # --- AUTOMATIC RECALCULATION FOR ALL EXISTING TRADES ---
-      all_trades = Trade.query.all()
-      for trade in all_trades:
-        # Build payload dictionary from existing trade record
-        trade_data = {
-            'setup_quality': trade.setup_quality_str,
-            'profit_taken': trade.profit_taken_str,
-            'stop_loss_zero': trade.stop_loss_zero_str,
-            'risk_val': trade.risk_str,
-            'risk_reward_val': trade.risk_reward_str,
-            'overtrading': getattr(trade, 'overtrading_str', 'no'),
-            'revenge_trading': getattr(trade, 'revenge_str', 'no'),
-            'impatient_trading': getattr(trade, 'impatient_str', 'no'),
-            'fearful_trading': getattr(trade, 'fearful_str', 'no'),
-        }
-
-        # Recalculate scores with the new rules
-        new_scores = calculate_scores(trade_data)
-
-        # Update trade score columns
-        trade.setup_score = new_scores['setup_score']
-        trade.profit_score = new_scores['profit_score']
-        trade.stop_loss_score = new_scores['stop_loss_score']
-        trade.risk_score = new_scores['risk_score']
-        trade.risk_reward_score = new_scores['risk_reward_score']
-        trade.total_score = new_scores['total_score']
-
-      # Save all updated trade scores to the database
-      db.session.commit()
-      # --------------------------------------------------------
-
+  if id not in SETTINGS_PAGE_RULES:
     return redirect(url_for('settings_page'))
 
-  return render_template('edit_setting.html', rule=rule, id=id)
+  category, _condition, key = SETTINGS_PAGE_RULES[id]
+  rule_info = SCORING_RULES[key]
+  rule = {'category': category, 'points': current_points_text(key)}
+  error = None
+
+  if request.method == 'POST':
+    submitted = (request.form.get('points') or '').strip()
+    parsed = parse_points(submitted, rule_info['count'])
+
+    if parsed is None:
+      # Don't save garbage: show the form again with what they typed.
+      error = (
+          f"Please enter exactly {rule_info['count']} numbers separated by "
+          f"'/' or ','. {rule_info['hint']}."
+      )
+      rule['points'] = submitted
+    else:
+      value = format_points(parsed)
+      setting_obj = AppSetting.query.filter_by(key=key).first()
+      if setting_obj:
+        setting_obj.value = value
+      else:
+        db.session.add(AppSetting(key=key, value=value))
+      db.session.commit()
+
+      # Re-score every existing trade with the new rule.
+      recalculate_all_trades()
+      return redirect(url_for('settings_page'))
+
+  return render_template(
+      'edit_setting.html', rule=rule, id=id, error=error, hint=rule_info['hint']
+  )
 
 
 if __name__ == '__main__':

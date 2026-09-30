@@ -35,8 +35,9 @@
                             <th>SL Zero</th>
                             <th>Risk ($)</th>
                             <th>R:R</th>
-                            <th>Risk > 0.5%</th>
-                            <th>Daily Risk < -1.5%</th>
+                            <th>Risk &lt; 0.5%</th>
+                            <th>Daily DD &lt; 1.5%</th>
+                            <th>Psychology</th>
                             <th>Equity</th>
                             <th>Total Score</th>
                             <th>Actions</th>
@@ -59,8 +60,9 @@
                             <td>{{ trade.stop_loss_zero_str | capitalize }}</td>
                             <td>${{ trade.risk_str }}</td>
                             <td>{{ trade.risk_reward_str }}</td>
-                            <td>{{ trade.risk_over_half_str | capitalize }}</td>
-                            <td>{{ trade.daily_risk_str | capitalize }}</td>
+                            <td>{{ (trade.risk_under_half_str or "-") | capitalize }}</td>
+                            <td>{{ (trade.daily_risk_str or "-") | capitalize }}</td>
+                            <td>{{ trade.psychology_flags | join(", ") or "-" }}</td>
                             <td>${{ "%.2f"|format(trade.current_equity) }}</td>
                             <td><span class="badge bg-success fs-6">{{ trade.total_score }}</span></td>
                             <td>
@@ -74,7 +76,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="14" class="text-center text-muted py-4">No trades logged yet.</td>
+                            <td colspan="15" class="text-center text-muted py-4">No trades logged yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
