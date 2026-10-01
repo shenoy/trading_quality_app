@@ -52,6 +52,7 @@
                             <th>SL Zero</th>
                             <th>Risk ($)</th>
                             <th>R:R</th>
+                            <th>Profit / Loss ($)</th>
                             <th>Risk &lt; 0.5%</th>
                             <th>Daily DD &lt; 1.5%</th>
                             <th>Psychology</th>
@@ -62,6 +63,9 @@
                     </thead>
                     <tbody>
                         {% for trade in trades %}
+                        {% set risk_val = trade.risk_str | float(0) %}
+                        {% set rr_val = trade.risk_reward_str | float(0) %}
+                        {% set pl_val = rr_val * risk_val %}
                         <tr>
                             <td>
                                 <!-- Move Up Button -->
@@ -77,6 +81,11 @@
                             <td>{{ trade.stop_loss_zero_str | capitalize }}</td>
                             <td>${{ trade.risk_str }}</td>
                             <td>{{ trade.risk_reward_str }}</td>
+                            <td>
+                                <span class="fw-bold {% if pl_val >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                    {{ "+" if pl_val > 0 else "" }}${{ "%.2f"|format(pl_val) }}
+                                </span>
+                            </td>
                             <td>{{ (trade.risk_under_half_str or "-") | capitalize }}</td>
                             <td>{{ (trade.daily_risk_str or "-") | capitalize }}</td>
                             <td>{{ trade.psychology_flags | join(", ") or "-" }}</td>
@@ -93,7 +102,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="15" class="text-center text-muted py-4">No trades logged yet.</td>
+                            <td colspan="16" class="text-center text-muted py-4">No trades logged yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

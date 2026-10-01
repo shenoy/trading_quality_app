@@ -22,7 +22,7 @@
     body.wallpaper-bg {
         /* Link to your image in the static folder using Flask's url_for */
         background-image: url("{{ url_for('static', filename='images/ocean.jpg') }}");
-        background-size: cover;          /* Scales image to cover the entire screen */
+        background-size: cover;         /* Scales image to cover the entire screen */
         background-position: center;     /* Centers the image */
         background-repeat: no-repeat;    /* Prevents tiling */
         background-attachment: fixed;    /* Keeps background locked in place while scrolling */
@@ -38,14 +38,11 @@
 
 </head>
 <body class="wallpaper-bg">
-    <!-- Navbar -->
+ <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
     <div class="container">
         <a class="navbar-brand" href="/">Trading Tracker</a>
         <div class="navbar-nav">
-                <a class="navbar-brand d-flex align-items-center" href="/">
-                <img src="{{ url_for('static', filename='tracker.svg') }}" alt="Trading Tracker Logo" height="35">
-                </a>
             <a class="nav-link active" href="/">Dashboard & Charts</a>
             <a class="nav-link" href="/trades-list">View All Trades</a>
             <a class="nav-link" href="/ibkr">IBKR Trades</a>
@@ -79,10 +76,10 @@
                     </div>
                 </div>
 
-                <!-- Chart 2: Risk & Risk:Reward -->
+                <!-- Chart 2: Risk Amount -->
                 <div class="card shadow-sm p-4">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h4 class="card-title m-0">Risk & Risk:Reward (R:R)</h4>
+                        <h4 class="card-title m-0">Risk Amount ($)</h4>
                         <div class="btn-group" role="group">
                             <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resizeChart('riskWrapper', 'small', event)">Small</button>
                             <button type="button" class="btn btn-outline-secondary btn-sm active" onclick="resizeChart('riskWrapper', 'medium', event)">Medium</button>
@@ -90,7 +87,22 @@
                         </div>
                     </div>
                     <div class="chart-container medium" id="riskWrapper">
-                        <canvas id="riskRewardChart"></canvas>
+                        <canvas id="riskChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Chart 3: Risk:Reward -->
+                <div class="card shadow-sm p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="card-title m-0">Risk:Reward (R:R)</h4>
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resizeChart('rrWrapper', 'small', event)">Small</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm active" onclick="resizeChart('rrWrapper', 'medium', event)">Medium</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resizeChart('rrWrapper', 'large', event)">Large</button>
+                        </div>
+                    </div>
+                    <div class="chart-container medium" id="rrWrapper">
+                        <canvas id="rrChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -100,6 +112,7 @@
     <script>
         let qualityChartInstance = null;
         let riskChartInstance = null;
+        let rrChartInstance = null;
 
         function resizeChart(wrapperId, size, event) {
             const wrapper = document.getElementById(wrapperId);
@@ -115,6 +128,8 @@
                 qualityChartInstance.resize();
             } else if (wrapperId === 'riskWrapper' && riskChartInstance) {
                 riskChartInstance.resize();
+            } else if (wrapperId === 'rrWrapper' && rrChartInstance) {
+                rrChartInstance.resize();
             }
         }
 
@@ -130,6 +145,35 @@
 
             const tickers = data.map(t => t.ticker);
             const datetimes = data.map(t => t.entry_datetime.replace('T', ' '));
+
+            // 1. Calculate Cumulative Averages (Running Average)
+            let runningRiskSum = 0;
+            const cumulativeRiskData = risks.map((val, idx) => {
+                runningRiskSum += val;
+                return parseFloat((runningRiskSum / (idx + 1)).toFixed(2));
+            });
+
+            let runningRRSum = 0;
+            const cumulativeRRData = riskRewards.map((val, idx) => {
+                runningRRSum += val;
+                return parseFloat((runningRRSum / (idx + 1)).toFixed(2));
+            });
+
+            // 2. Calculate 10-Trade Moving Averages
+            const windowSize = 10;
+            const movingAvgRiskData = risks.map((val, idx, arr) => {
+                const start = Math.max(0, idx - windowSize + 1);
+                const windowSlice = arr.slice(start, idx + 1);
+                const sum = windowSlice.reduce((a, b) => a + b, 0);
+                return parseFloat((sum / windowSlice.length).toFixed(2));
+            });
+
+            const movingAvgRRData = riskRewards.map((val, idx, arr) => {
+                const start = Math.max(0, idx - windowSize + 1);
+                const windowSlice = arr.slice(start, idx + 1);
+                const sum = windowSlice.reduce((a, b) => a + b, 0);
+                return parseFloat((sum / windowSlice.length).toFixed(2));
+            });
 
             const commonTooltipOptions = {
                 plugins: {
@@ -149,23 +193,27 @@
             if (qualityChartInstance) qualityChartInstance.destroy();
 
             qualityChartInstance = new Chart(ctx1, {
-                type: 'line',
+                type: 'bar',
                 data: {
                     labels: labels,
                     datasets: [
                     {
+                        type: 'bar',
+                        order: 2,  
                         label: 'Quality Score',
                         data: qualityScores,
-                        borderColor: 'rgba(54, 162, 235, 1)',      // Blue
-                        backgroundColor: 'rgba(54, 162, 235, 0.2)', // Blue
+                        borderColor: 'rgba(54, 162, 235, 1)',      
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)', 
                         yAxisID: 'y',
                         tension: 0.1
                     },
                     {
+                        type: 'line',
+                        order: 1,  
                         label: 'Equity Balance ($)',
                         data: equities,
-                        borderColor: 'rgba(255, 99, 132, 1)',      // Red
-                        backgroundColor: 'rgba(255, 99, 132, 0.2)', // Red
+                        borderColor: 'rgba(255, 99, 132, 1)',      
+                        backgroundColor: 'rgba(255, 99, 132, 0.2)', 
                         yAxisID: 'y1',
                         tension: 0.1
                     }
@@ -183,29 +231,43 @@
                 }
             });
 
-            // Chart 2
-            const ctx2 = document.getElementById('riskRewardChart').getContext('2d');
+            // Chart 2: Risk Amount (bars + cumulative avg line + 10-trade moving avg line)
+            const ctx2 = document.getElementById('riskChart').getContext('2d');
             if (riskChartInstance) riskChartInstance.destroy();
 
             riskChartInstance = new Chart(ctx2, {
-                type: 'line',
+                type: 'bar',
                 data: {
                     labels: labels,
                     datasets: [
                         {
+                            type: 'bar',
                             label: 'Risk Amount ($)',
                             data: risks,
-                            borderColor: 'rgba(255, 159, 64, 1)',
-                            backgroundColor: 'rgba(255, 159, 64, 0.2)',
-                            yAxisID: 'y',
+                            backgroundColor: 'rgba(255, 159, 64, 0.7)',
+                            order: 3
+                        }, 
+                        {
+                            type: 'line',
+                            label: 'Cumulative Avg Risk ($)',
+                            data: cumulativeRiskData,
+                            borderColor: 'rgba(255, 99, 132, 1)', // Red
+                            backgroundColor: 'rgba(255, 99, 132, 0)',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 2,
+                            order: 2,
                             tension: 0.1
                         },
                         {
-                            label: 'Risk:Reward (R:R)',
-                            data: riskRewards,
-                            borderColor: 'rgba(153, 102, 255, 1)',
-                            backgroundColor: 'rgba(153, 102, 255, 0.2)',
-                            yAxisID: 'y1',
+                            type: 'line',
+                            label: '10-Trade Moving Avg Risk ($)',
+                            data: movingAvgRiskData,
+                            borderColor: 'rgba(54, 162, 235, 1)', // Blue
+                            backgroundColor: 'rgba(54, 162, 235, 0)',
+                            borderWidth: 2,
+                            pointRadius: 2,
+                            order: 1,
                             tension: 0.1
                         }
                     ]
@@ -216,8 +278,59 @@
                     ...commonTooltipOptions,
                     scales: {
                         x: { title: { display: true, text: 'Trade Sequence' } },
-                        y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Risk Amount ($)' } },
-                        y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Risk:Reward Ratio' } }
+                        y: { beginAtZero: true, title: { display: true, text: 'Risk Amount ($)' } }
+                    }
+                }
+            });
+
+            // Chart 3: Risk:Reward (bars + cumulative avg line + 10-trade moving avg line)
+            const ctx3 = document.getElementById('rrChart').getContext('2d');
+            if (rrChartInstance) rrChartInstance.destroy();
+
+            rrChartInstance = new Chart(ctx3, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            type: 'bar',
+                            label: 'Risk:Reward (R:R)',
+                            data: riskRewards,
+                            backgroundColor: 'rgba(153, 102, 255, 0.7)',
+                            order: 3
+                        }, 
+                        {
+                            type: 'line',
+                            label: 'Cumulative Avg R:R',
+                            data: cumulativeRRData,
+                            borderColor: 'rgba(255, 99, 132, 1)', // Red
+                            backgroundColor: 'rgba(255, 99, 132, 0)',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 2,
+                            order: 2,
+                            tension: 0.1
+                        },
+                        {
+                            type: 'line',
+                            label: '10-Trade Moving Avg R:R',
+                            data: movingAvgRRData,
+                            borderColor: 'rgba(54, 162, 235, 1)', // Blue
+                            backgroundColor: 'rgba(54, 162, 235, 0)',
+                            borderWidth: 2,
+                            pointRadius: 2,
+                            order: 1,
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    ...commonTooltipOptions,
+                    scales: {
+                        x: { title: { display: true, text: 'Trade Sequence' } },
+                        y: { title: { display: true, text: 'Risk:Reward Ratio' } }
                     }
                 }
             });
@@ -225,5 +338,6 @@
 
         fetchAndRenderData();
     </script>
+
 </body>
 </html>
