@@ -124,7 +124,10 @@
                                 <option value="yes" {% if trade.fearful_trading_str == 'yes' %}selected{% endif %}>Yes</option>
                             </select>
                         </div>
-
+                        <div class="mb-3">
+                            <label for="screenshot_url" class="form-label">Screenshot Link (URL)</label>
+                            <input type="url" class="form-label form-control" id="screenshot_url" name="screenshot_url" placeholder="https://imgur.com/... or TradingView link" value="{{ trade.screenshot_url if trade else '' }}">
+                        </div>
                         <button type="submit" class="btn btn-primary w-100 mb-2">Update Trade</button>
                         <a href="/trades-list" class="btn btn-secondary w-100">Cancel</a>
                     </form>

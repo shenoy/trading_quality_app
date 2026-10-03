@@ -44,6 +44,7 @@ class Trade(db.Model):
     psychology_score = db.Column(db.Float, nullable=True, default=0.0)
     total_score = db.Column(db.Float, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    screenshot_url = db.Column(db.String(500), nullable=True)
 
     @property
     def psychology_flags(self):
@@ -300,6 +301,7 @@ def ensure_schema():
             ('revenge_trading_str', "TEXT DEFAULT 'no'"),
             ('impatient_trading_str', "TEXT DEFAULT 'no'"),
             ('fearful_trading_str', "TEXT DEFAULT 'no'"),
+            ('screenshot_url', 'VARCHAR(500)'),
         ]:
             if name not in columns:
                 db.session.execute(
@@ -387,6 +389,8 @@ def edit_trade(id):
         trade.impatient_trading_str = data.get('impatient_trading', 'no')
         trade.fearful_trading_str = data.get('fearful_trading', 'no')
 
+        trade.screenshot_url = request.form.get('screenshot_url', '').strip() or None
+
         db.session.commit()
         return redirect(url_for('trades_list'))
 
@@ -423,6 +427,7 @@ def manage_trades():
             revenge_trading_str=data.get('revenge_trading', 'no'),
             impatient_trading_str=data.get('impatient_trading', 'no'),
             fearful_trading_str=data.get('fearful_trading', 'no'),
+            screenshot_url=data.get('screenshot_url', '').strip() or None,
             setup_score=scores['setup_score'],
             profit_score=scores['profit_score'],
             stop_loss_score=scores['stop_loss_score'],

@@ -20,16 +20,14 @@
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='tracker.svg') }}">
 <style>
     body.wallpaper-bg {
-        /* Link to your image in the static folder using Flask's url_for */
         background-image: url("{{ url_for('static', filename='images/ocean.jpg') }}");
-        background-size: cover;         /* Scales image to cover the entire screen */
-        background-position: center;     /* Centers the image */
-        background-repeat: no-repeat;    /* Prevents tiling */
-        background-attachment: fixed;    /* Keeps background locked in place while scrolling */
+        background-size: cover;     
+        background-position: center;     
+        background-repeat: no-repeat;    
+        background-attachment: fixed;    
         min-height: 100vh;
     }
 
-    /* Optional: Makes your cards slightly translucent so they pop nicely over the wallpaper */
     body.wallpaper-bg .card {
         background-color: rgba(255, 255, 255, 0.90);
         backdrop-filter: blur(8px);
@@ -38,7 +36,7 @@
 
 </head>
 <body class="wallpaper-bg">
- <!-- Navbar -->
+   <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
     <div class="container">
         <a class="navbar-brand" href="/">Trading Tracker</a>
@@ -57,6 +55,62 @@
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1 class="m-0">Trading Quality & Balance Dashboard</h1>
             <a href="/new-trade" class="btn btn-primary btn-lg shadow-sm">➕ Log New Trade</a>
+        </div>
+
+        <!-- Summary Cards Row 1 -->
+        <div class="row g-3 mb-3">
+            <div class="col-md-3">
+                <div class="card shadow-sm p-3 text-center">
+                    <h6 class="text-muted mb-1">Win Rate</h6>
+                    <h3 id="statWinRate" class="fw-bold mb-0 text-primary">0.00%</h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card shadow-sm p-3 text-center">
+                    <h6 class="text-muted mb-1">Expected Value (EV)</h6>
+                    <h3 id="statEV" class="fw-bold mb-0 text-success">$0.00</h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card shadow-sm p-3 text-center">
+                    <h6 class="text-muted mb-1">Days Traded</h6>
+                    <h3 id="statDaysTraded" class="fw-bold mb-0 text-dark">0</h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card shadow-sm p-3 text-center">
+                    <h6 class="text-muted mb-1">Win Rate Daily % Change</h6>
+                    <h3 id="statDailyWinRateChange" class="fw-bold mb-0 text-secondary">0.00%</h3>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Cards Row 2 -->
+        <div class="row g-3 mb-4">
+            <div class="col">
+                <div class="card shadow-sm p-3 text-center">
+                    <h6 class="text-muted mb-1">Latest R:R Daily % Change</h6>
+                    <h3 id="statDailyRRChange" class="fw-bold mb-0 text-secondary">0.00%</h3>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card shadow-sm p-3 text-center">
+                    <h6 class="text-muted mb-1">Latest EV Daily % Change</h6>
+                    <h3 id="statDailyEVChange" class="fw-bold mb-0 text-secondary">0.00%</h3>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card shadow-sm p-3 text-center">
+                    <h6 class="text-muted mb-1">Daily % Change in Balance</h6>
+                    <h3 id="statDailyBalanceChange" class="fw-bold mb-0 text-secondary">0.00%</h3>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card shadow-sm p-3 text-center">
+                    <h6 class="text-muted mb-1">Daily P&L</h6>
+                    <h3 id="statDailyPL" class="fw-bold mb-0 text-secondary">$0.00</h3>
+                </div>
+            </div>
         </div>
 
         <!-- Charts Column -->
@@ -121,6 +175,52 @@
                         <canvas id="dailyPLChart"></canvas>
                     </div>
                 </div>
+
+                <!-- New Chart 5: Daily % Change in Win Rate -->
+                <div class="card shadow-sm p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="card-title m-0">Daily % Change in Win Rate</h4>
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resizeChart('dailyWinRateWrapper', 'small', event)">Small</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm active" onclick="resizeChart('dailyWinRateWrapper', 'medium', event)">Medium</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resizeChart('dailyWinRateWrapper', 'large', event)">Large</button>
+                        </div>
+                    </div>
+                    <div class="chart-container medium" id="dailyWinRateWrapper">
+                        <canvas id="dailyWinRateChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- New Chart 6: Daily % Change in R:R -->
+                <div class="card shadow-sm p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="card-title m-0">Daily % Change in Risk:Reward (R:R)</h4>
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resizeChart('dailyRRWrapper', 'small', event)">Small</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm active" onclick="resizeChart('dailyRRWrapper', 'medium', event)">Medium</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resizeChart('dailyRRWrapper', 'large', event)">Large</button>
+                        </div>
+                    </div>
+                    <div class="chart-container medium" id="dailyRRWrapper">
+                        <canvas id="dailyRRChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- New Chart 7: Daily % Change in Expected Value (EV) -->
+                <div class="card shadow-sm p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="card-title m-0">Daily % Change in Expected Value (EV)</h4>
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resizeChart('dailyEVWrapper', 'small', event)">Small</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm active" onclick="resizeChart('dailyEVWrapper', 'medium', event)">Medium</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resizeChart('dailyEVWrapper', 'large', event)">Large</button>
+                        </div>
+                    </div>
+                    <div class="chart-container medium" id="dailyEVWrapper">
+                        <canvas id="dailyEVChart"></canvas>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
@@ -130,6 +230,9 @@
         let riskChartInstance = null;
         let rrChartInstance = null;
         let dailyPLChartInstance = null;
+        let dailyWinRateChartInstance = null;
+        let dailyRRChartInstance = null;
+        let dailyEVChartInstance = null;
 
         function resizeChart(wrapperId, size, event) {
             const wrapper = document.getElementById(wrapperId);
@@ -141,20 +244,53 @@
             wrapper.classList.remove('small', 'medium', 'large');
             wrapper.classList.add(size);
 
-            if (wrapperId === 'qualityWrapper' && qualityChartInstance) {
-                qualityChartInstance.resize();
-            } else if (wrapperId === 'riskWrapper' && riskChartInstance) {
-                riskChartInstance.resize();
-            } else if (wrapperId === 'rrWrapper' && rrChartInstance) {
-                rrChartInstance.resize();
-            } else if (wrapperId === 'dailyPLWrapper' && dailyPLChartInstance) {
-                dailyPLChartInstance.resize();
-            }
+            if (wrapperId === 'qualityWrapper' && qualityChartInstance) qualityChartInstance.resize();
+            else if (wrapperId === 'riskWrapper' && riskChartInstance) riskChartInstance.resize();
+            else if (wrapperId === 'rrWrapper' && rrChartInstance) rrChartInstance.resize();
+            else if (wrapperId === 'dailyPLWrapper' && dailyPLChartInstance) dailyPLChartInstance.resize();
+            else if (wrapperId === 'dailyWinRateWrapper' && dailyWinRateChartInstance) dailyWinRateChartInstance.resize();
+            else if (wrapperId === 'dailyRRWrapper' && dailyRRChartInstance) dailyRRChartInstance.resize();
+            else if (wrapperId === 'dailyEVWrapper' && dailyEVChartInstance) dailyEVChartInstance.resize();
         }
 
         async function fetchAndRenderData() {
             const response = await fetch('/api/trades');
             const data = await response.json();
+
+            // Track unique trading days
+            const uniqueTradingDays = new Set();
+
+            if (data && data.length > 0) {
+                let wins = 0;
+                let totalPL = 0;
+
+                data.forEach(t => {
+                    if (t.entry_datetime) {
+                        const dateStr = t.entry_datetime.split('T')[0];
+                        uniqueTradingDays.add(dateStr);
+                    }
+
+                    const risk = parseFloat(t.risk_val) || 0;
+                    const rr = parseFloat(t.risk_reward_str) || 0;
+                    const tradePL = risk * rr; 
+
+                    totalPL += tradePL;
+                    if (tradePL > 0) {
+                        wins++;
+                    }
+                });
+
+                const winRate = (wins / data.length) * 100;
+                const expectedValue = totalPL / data.length;
+
+                document.getElementById('statWinRate').innerText = `${winRate.toFixed(2)}%`;
+                
+                const evElement = document.getElementById('statEV');
+                evElement.innerText = `$${expectedValue.toFixed(2)}`;
+                evElement.className = `fw-bold mb-0 ${expectedValue >= 0 ? 'text-success' : 'text-danger'}`;
+
+                document.getElementById('statDaysTraded').innerText = uniqueTradingDays.size;
+            }
 
             const labels = data.map((t, index) => `Trade #${index + 1}`);
             const qualityScores = data.map(t => parseFloat(t.total_score) || 0);
@@ -163,7 +299,7 @@
             const riskRewards = data.map(t => parseFloat(t.risk_reward_str) || 0);
 
             const tickers = data.map(t => t.ticker);
-            const datetimes = data.map(t => t.entry_datetime.replace('T', ' '));
+            const datetimes = data.map(t => t.entry_datetime ? t.entry_datetime.replace('T', ' ') : '');
 
             // 1. Calculate Cumulative Averages (Running Average)
             let runningRiskSum = 0;
@@ -198,7 +334,7 @@
             const dailyPLMap = {};
             data.forEach(t => {
                 if (!t.entry_datetime) return;
-                const dateStr = t.entry_datetime.split('T')[0]; // Extract YYYY-MM-DD
+                const dateStr = t.entry_datetime.split('T')[0]; 
                 const risk = parseFloat(t.risk_val) || 0;
                 const rr = parseFloat(t.risk_reward_str) || 0;
                 const pl = risk * rr;
@@ -212,6 +348,119 @@
             const sortedDates = Object.keys(dailyPLMap).sort();
             const dailyPLValues = sortedDates.map(date => parseFloat(dailyPLMap[date].toFixed(2)));
             const dailyColors = dailyPLValues.map(val => val >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)');
+
+            // 4. Calculate Daily Metrics for Win Rate, R:R, and EV to derive Daily % Changes
+            const dailyTradesMap = {};
+            data.forEach(t => {
+                if (!t.entry_datetime) return;
+                const dateStr = t.entry_datetime.split('T')[0];
+                if (!dailyTradesMap[dateStr]) {
+                    dailyTradesMap[dateStr] = [];
+                }
+                dailyTradesMap[dateStr].push(t);
+            });
+
+            const metricDates = Object.keys(dailyTradesMap).sort();
+            let cumulativeWins = 0;
+            let cumulativeTotalTrades = 0;
+            let cumulativeRRSumForDaily = 0;
+            let cumulativePLSumForDaily = 0;
+
+            const dailyWinRates = [];
+            const dailyAvgRRs = [];
+            const dailyEVs = [];
+
+            metricDates.forEach(date => {
+                const dayTrades = dailyTradesMap[date];
+                let dayWins = 0;
+                let dayRRSum = 0;
+                let dayPLSum = 0;
+
+                dayTrades.forEach(t => {
+                    const risk = parseFloat(t.risk_val) || 0;
+                    const rr = parseFloat(t.risk_reward_str) || 0;
+                    const pl = risk * rr;
+                    dayPLSum += pl;
+                    dayRRSum += rr;
+                    if (pl > 0) dayWins++;
+                });
+
+                cumulativeWins += dayWins;
+                cumulativeTotalTrades += dayTrades.length;
+                cumulativeRRSumForDaily += dayRRSum;
+                cumulativePLSumForDaily += dayPLSum;
+
+                const currentWinRate = cumulativeTotalTrades > 0 ? (cumulativeWins / cumulativeTotalTrades) * 100 : 0;
+                const currentAvgRR = cumulativeTotalTrades > 0 ? cumulativeRRSumForDaily / cumulativeTotalTrades : 0;
+                const currentEV = cumulativeTotalTrades > 0 ? cumulativePLSumForDaily / cumulativeTotalTrades : 0;
+
+                dailyWinRates.push(currentWinRate);
+                dailyAvgRRs.push(currentAvgRR);
+                dailyEVs.push(currentEV);
+            });
+
+            // Helper to compute percentage change arrays given a metric sequence
+            const computePercentageChanges = (arr) => {
+                return arr.map((val, idx, source) => {
+                    if (idx === 0) return 0;
+                    const prev = source[idx - 1];
+                    if (prev === 0) return val === 0 ? 0 : 100;
+                    return parseFloat((((val - prev) / Math.abs(prev)) * 100).toFixed(2));
+                });
+            };
+
+            const dailyWinRatePctChanges = computePercentageChanges(dailyWinRates);
+            const dailyRRPctChanges = computePercentageChanges(dailyAvgRRs);
+            const dailyEVPctChanges = computePercentageChanges(dailyEVs);
+
+            // 5. Calculate Daily % Change in Account Balance based on latest daily equity
+            const dailyEquityMap = {};
+            data.forEach(t => {
+                if (!t.entry_datetime) return;
+                const dateStr = t.entry_datetime.split('T')[0];
+                const eq = parseFloat(t.current_equity) || 0;
+                dailyEquityMap[dateStr] = eq; // Captures closing/latest equity for that day
+            });
+
+            const equityDates = Object.keys(dailyEquityMap).sort();
+            const dailyEquities = equityDates.map(date => dailyEquityMap[date]);
+            const dailyBalancePctChanges = computePercentageChanges(dailyEquities);
+
+            // Update the Summary Cards with the latest day's values
+            if (metricDates.length > 0) {
+                const latestIdx = metricDates.length - 1;
+
+                const wrChange = dailyWinRatePctChanges[latestIdx];
+                const wrEl = document.getElementById('statDailyWinRateChange');
+                wrEl.innerText = `${wrChange >= 0 ? '+' : ''}${wrChange.toFixed(2)}%`;
+                wrEl.className = `fw-bold mb-0 ${wrChange >= 0 ? 'text-success' : 'text-danger'}`;
+
+                const rrChange = dailyRRPctChanges[latestIdx];
+                const rrEl = document.getElementById('statDailyRRChange');
+                rrEl.innerText = `${rrChange >= 0 ? '+' : ''}${rrChange.toFixed(2)}%`;
+                rrEl.className = `fw-bold mb-0 ${rrChange >= 0 ? 'text-success' : 'text-danger'}`;
+
+                const evChange = dailyEVPctChanges[latestIdx];
+                const evEl = document.getElementById('statDailyEVChange');
+                evEl.innerText = `${evChange >= 0 ? '+' : ''}${evChange.toFixed(2)}%`;
+                evEl.className = `fw-bold mb-0 ${evChange >= 0 ? 'text-success' : 'text-danger'}`;
+            }
+
+            if (equityDates.length > 0) {
+                const latestEqIdx = equityDates.length - 1;
+                const balanceChange = dailyBalancePctChanges[latestEqIdx];
+                const balanceEl = document.getElementById('statDailyBalanceChange');
+                balanceEl.innerText = `${balanceChange >= 0 ? '+' : ''}${balanceChange.toFixed(2)}%`;
+                balanceEl.className = `fw-bold mb-0 ${balanceChange >= 0 ? 'text-success' : 'text-danger'}`;
+            }
+
+            if (sortedDates.length > 0) {
+                const latestDate = sortedDates[sortedDates.length - 1];
+                const latestPL = dailyPLMap[latestDate];
+                const plEl = document.getElementById('statDailyPL');
+                plEl.innerText = `${latestPL >= 0 ? '+' : ''}$${latestPL.toFixed(2)}`;
+                plEl.className = `fw-bold mb-0 ${latestPL >= 0 ? 'text-success' : 'text-danger'}`;
+            }
 
             const commonTooltipOptions = {
                 plugins: {
@@ -406,10 +655,84 @@
                     }
                 }
             });
+
+            // Chart 5: Daily % Change in Win Rate
+            const ctx5 = document.getElementById('dailyWinRateChart').getContext('2d');
+            if (dailyWinRateChartInstance) dailyWinRateChartInstance.destroy();
+
+            dailyWinRateChartInstance = new Chart(ctx5, {
+                type: 'bar',
+                data: {
+                    labels: metricDates,
+                    datasets: [{
+                        label: 'Daily % Change in Win Rate (%)',
+                        data: dailyWinRatePctChanges,
+                        backgroundColor: dailyWinRatePctChanges.map(v => v >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: 'Date' } },
+                        y: { title: { display: true, text: 'Win Rate % Change (%)' } }
+                    }
+                }
+            });
+
+            // Chart 6: Daily % Change in R:R
+            const ctx6 = document.getElementById('dailyRRChart').getContext('2d');
+            if (dailyRRChartInstance) dailyRRChartInstance.destroy();
+
+            dailyRRChartInstance = new Chart(ctx6, {
+                type: 'bar',
+                data: {
+                    labels: metricDates,
+                    datasets: [{
+                        label: 'Daily % Change in R:R (%)',
+                        data: dailyRRPctChanges,
+                        backgroundColor: dailyRRPctChanges.map(v => v >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: 'Date' } },
+                        y: { title: { display: true, text: 'R:R % Change (%)' } }
+                    }
+                }
+            });
+
+            // Chart 7: Daily % Change in EV
+            const ctx7 = document.getElementById('dailyEVChart').getContext('2d');
+            if (dailyEVChartInstance) dailyEVChartInstance.destroy();
+
+            dailyEVChartInstance = new Chart(ctx7, {
+                type: 'bar',
+                data: {
+                    labels: metricDates,
+                    datasets: [{
+                        label: 'Daily % Change in EV (%)',
+                        data: dailyEVPctChanges,
+                        backgroundColor: dailyEVPctChanges.map(v => v >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: 'Date' } },
+                        y: { title: { display: true, text: 'EV % Change (%)' } }
+                    }
+                }
+            });
         }
 
         fetchAndRenderData();
     </script>
-
 </body>
 </html>

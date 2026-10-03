@@ -7,16 +7,13 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
     body.wallpaper-bg {
-        /* Link to your image in the static folder using Flask's url_for */
         background-image: url("{{ url_for('static', filename='images/ocean.jpg') }}");
-        background-size: cover;          /* Scales image to cover the entire screen */
-        background-position: center;     /* Centers the image */
-        background-repeat: no-repeat;    /* Prevents tiling */
-        background-attachment: fixed;    /* Keeps background locked in place while scrolling */
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
         min-height: 100vh;
     }
-
-    /* Optional: Makes your cards slightly translucent so they pop nicely over the wallpaper */
     body.wallpaper-bg .card {
         background-color: rgba(255, 255, 255, 0.90);
         backdrop-filter: blur(8px);
@@ -61,6 +58,7 @@
                             <th>Psychology</th>
                             <th>Equity</th>
                             <th>Total Score</th>
+                            <th>Chart</th> <!-- Added column header -->
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -71,9 +69,7 @@
                         {% set pl_val = rr_val * risk_val %}
                         <tr>
                             <td>
-                                <!-- Move Up Button -->
                                 <a href="/trade/move/{{ trade.id }}/up" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Move Up">▲</a>
-                                <!-- Move Down Button -->
                                 <a href="/trade/move/{{ trade.id }}/down" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Move Down">▼</a>
                             </td>
                             <td>{{ trade.id }}</td>
@@ -95,6 +91,13 @@
                             <td>${{ "%.2f"|format(trade.current_equity) }}</td>
                             <td><span class="badge bg-success fs-6">{{ trade.total_score }}</span></td>
                             <td>
+                                {% if trade.screenshot_url %}
+                                    <a href="{{ trade.screenshot_url }}" target="_blank" class="btn btn-sm btn-outline-info py-0 px-2">View</a>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
                                 <div class="d-flex gap-1">
                                     <a href="/trade/edit/{{ trade.id }}" class="btn btn-sm btn-warning">Edit</a>
                                     <form action="/trade/delete/{{ trade.id }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this trade?');">
@@ -105,7 +108,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="16" class="text-center text-muted py-4">No trades logged yet.</td>
+                            <td colspan="17" class="text-center text-muted py-4">No trades logged yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
