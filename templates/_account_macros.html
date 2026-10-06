@@ -1,0 +1,11 @@
+{% macro money(v) -%}
+{%- if v is none -%}&mdash;{%- else -%}{{ '-' if v < 0 else '' }}${{ '{:,.2f}'.format(v | abs) }}{%- endif -%}
+{%- endmacro %}
+
+{% macro signed(v) -%}
+{%- if v is none -%}&mdash;{%- else -%}{{ '+' if v > 0 else '-' if v < 0 else '' }}${{ '{:,.2f}'.format(v | abs) }}{%- endif -%}
+{%- endmacro %}
+
+{% macro tone(v) -%}
+{{ 'text-success' if v is not none and v > 0 else 'text-danger' if v is not none and v < 0 else '' }}
+{%- endmacro %}

@@ -45,6 +45,7 @@ class Trade(db.Model):
     total_score = db.Column(db.Float, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     screenshot_url = db.Column(db.String(500), nullable=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=True)
 
     @property
     def psychology_flags(self):
@@ -58,6 +59,14 @@ class Trade(db.Model):
         if self.fearful_trading_str == 'yes':
             flags.append('Fearful')
         return flags
+
+
+class Account(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(60), unique=True, nullable=False)
+    # The balance this account started from. Optional (blank = not set).
+    starting_balance = db.Column(db.Float, nullable=True)
+    created = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class IBKRTrade(db.Model):
@@ -294,6 +303,12 @@ def ensure_schema():
     }
     changed = False
     try:
+        # Every trade belongs to an account. Adding this column on its own
+        # doesn't need a re-score, so it doesn't set `changed`.
+        if 'account_id' not in columns:
+            db.session.execute(
+                text('ALTER TABLE trade ADD COLUMN account_id INTEGER')
+            )
         for name, ddl in [
             ('daily_risk_score', 'REAL DEFAULT 0.0'),
             ('psychology_score', 'REAL DEFAULT 0.0'),
@@ -334,6 +349,213 @@ with app.app_context():
     ensure_schema()
 
 
+# --- ACCOUNTS ---
+# Each trade belongs to an account (your main account, a prop firm challenge,
+# ...). The account you are looking at is remembered in a cookie, and every
+# trade page and chart only shows that account's trades.
+
+
+def ensure_default_account():
+    """Makes sure one account exists and every trade belongs to an account."""
+    try:
+        first = Account.query.order_by(Account.id.asc()).first()
+        if first is None:
+            first = Account(name='Main Account')
+            db.session.add(first)
+            db.session.flush()
+        Trade.query.filter(Trade.account_id.is_(None)).update(
+            {'account_id': first.id}, synchronize_session=False
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('Default account setup skipped')
+
+
+with app.app_context():
+    ensure_default_account()
+
+
+def get_active_account():
+    try:
+        account = db.session.get(Account, int(request.cookies.get('account_id', '')))
+    except ValueError:
+        account = None
+    return account or Account.query.order_by(Account.id.asc()).first()
+
+
+def parse_balance(value):
+    """Returns (number, error). A blank value means 'not set' -> (None, None)."""
+    value = (value or '').strip().replace(',', '')
+    if not value:
+        return None, None
+    try:
+        number = float(value)
+    except ValueError:
+        return None, 'Starting balance must be a number.'
+    if number != number or number in (float('inf'), float('-inf')):
+        return None, 'Starting balance must be a number.'
+    return number, None
+
+
+def format_number(number):
+    return ('%.2f' % number).rstrip('0').rstrip('.')
+
+
+def validate_account_name(name, exclude_id=None):
+    if not name:
+        return 'Please enter a name for the account.'
+    if len(name) > 60:
+        return 'The name can be at most 60 characters.'
+    query = Account.query.filter(db.func.lower(Account.name) == name.lower())
+    if exclude_id is not None:
+        query = query.filter(Account.id != exclude_id)
+    if query.first():
+        return 'An account with that name already exists.'
+    return None
+
+
+def trade_profit_loss(trade):
+    try:
+        return float(trade.risk_str) * float(trade.risk_reward_str)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def account_summary(account):
+    """Balance progress and trade stats for one account."""
+    trades = (
+        Trade.query.filter_by(account_id=account.id)
+        .order_by(Trade.position.asc())
+        .all()
+    )
+    start = account.starting_balance
+    # With no trades yet the balance is still the starting balance.
+    latest = trades[-1].current_equity if trades else start
+    change = latest - start if latest is not None and start is not None else None
+    change_pct = change / start * 100 if change is not None and start and start > 0 else None
+    return {
+        'trade_count': len(trades),
+        'starting_balance': start,
+        'latest_equity': latest,
+        'change': change,
+        'change_pct': change_pct,
+        'net_pl': sum(trade_profit_loss(t) for t in trades),
+        'avg_score': (
+            sum(t.total_score for t in trades) / len(trades) if trades else None
+        ),
+    }
+
+
+@app.context_processor
+def inject_accounts():
+    return {
+        'accounts': Account.query.order_by(Account.id.asc()).all(),
+        'active_account': get_active_account(),
+        'account_summary': account_summary,
+    }
+
+
+def safe_next(target):
+    """Only allow redirects to pages inside this app."""
+    if (
+        target
+        and target.startswith('/')
+        and not target.startswith('//')
+        and '\\' not in target
+    ):
+        return target
+    return '/'
+
+
+def switch_to(account, target='/'):
+    response = redirect(safe_next(target))
+    response.set_cookie(
+        'account_id', str(account.id), max_age=60 * 60 * 24 * 365, samesite='Lax'
+    )
+    return response
+
+
+ACCOUNT_MESSAGES = {
+    'deleted': ('success', 'Account deleted.'),
+    'has_trades': (
+        'warning',
+        "That account still has trades, so it can't be deleted. "
+        'Delete its trades first.',
+    ),
+    'last_account': ('warning', "You can't delete your only account."),
+}
+
+
+@app.route('/accounts', methods=['GET', 'POST'])
+def accounts_page():
+    error = None
+    form = {'name': '', 'starting_balance': ''}
+    if request.method == 'POST':
+        form['name'] = (request.form.get('name') or '').strip()
+        form['starting_balance'] = (request.form.get('starting_balance') or '').strip()
+        balance, error = parse_balance(form['starting_balance'])
+        if error is None and balance is None:
+            error = 'Please enter the starting balance for the new account.'
+        if error is None:
+            error = validate_account_name(form['name'])
+        if error is None:
+            account = Account(name=form['name'], starting_balance=balance)
+            db.session.add(account)
+            db.session.commit()
+            return switch_to(account, '/')  # open the new account's dashboard
+    return render_template(
+        'accounts.html',
+        error=error,
+        form=form,
+        message=ACCOUNT_MESSAGES.get(request.args.get('msg')),
+    )
+
+
+@app.route('/accounts/edit/<int:id>', methods=['GET', 'POST'])
+def edit_account(id):
+    account = Account.query.get_or_404(id)
+    error = None
+    form = {
+        'name': account.name,
+        'starting_balance': (
+            ''
+            if account.starting_balance is None
+            else format_number(account.starting_balance)
+        ),
+    }
+    if request.method == 'POST':
+        form['name'] = (request.form.get('name') or '').strip()
+        form['starting_balance'] = (request.form.get('starting_balance') or '').strip()
+        balance, error = parse_balance(form['starting_balance'])
+        if error is None:
+            error = validate_account_name(form['name'], exclude_id=account.id)
+        if error is None:
+            account.name = form['name']
+            account.starting_balance = balance
+            db.session.commit()
+            return redirect(url_for('accounts_page'))
+    return render_template('edit_account.html', account=account, error=error, form=form)
+
+
+@app.route('/accounts/delete/<int:id>', methods=['POST'])
+def delete_account(id):
+    account = Account.query.get_or_404(id)
+    if Account.query.count() <= 1:
+        return redirect(url_for('accounts_page', msg='last_account'))
+    if Trade.query.filter_by(account_id=account.id).first():
+        return redirect(url_for('accounts_page', msg='has_trades'))
+    db.session.delete(account)
+    db.session.commit()
+    return redirect(url_for('accounts_page', msg='deleted'))
+
+
+@app.route('/accounts/switch/<int:id>')
+def switch_account(id):
+    account = Account.query.get_or_404(id)
+    return switch_to(account, request.args.get('next', '/'))
+
+
 # --- TRADING QUALITY APP ROUTES ---
 
 
@@ -345,12 +567,24 @@ def index():
 @app.route('/new-trade')
 def new_trade_page():
     pts = {key: get_rule_points(key) for key in SCORING_RULES}
-    return render_template('new_trade.html', pts=pts)
+    account = get_active_account()
+    has_trades = Trade.query.filter_by(account_id=account.id).first() is not None
+    # First trade in a brand-new account: start from that account's own balance.
+    default_equity = (
+        account.starting_balance
+        if not has_trades and account.starting_balance is not None
+        else None
+    )
+    return render_template('new_trade.html', pts=pts, default_equity=default_equity)
 
 
 @app.route('/trades-list')
 def trades_list():
-    all_trades = Trade.query.order_by(Trade.position.asc()).all()
+    all_trades = (
+        Trade.query.filter_by(account_id=get_active_account().id)
+        .order_by(Trade.position.asc())
+        .all()
+    )
     return render_template('trades.html', trades=all_trades)
 
 
@@ -410,8 +644,15 @@ def manage_trades():
     if request.method == 'POST':
         data = request.json
         scores = calculate_scores(data)
-        max_pos = db.session.query(db.func.max(Trade.position)).scalar() or 0
+        account = get_active_account()
+        max_pos = (
+            db.session.query(db.func.max(Trade.position))
+            .filter(Trade.account_id == account.id)
+            .scalar()
+            or 0
+        )
         new_trade = Trade(
+            account_id=account.id,
             position=max_pos + 1,
             setup_quality_str=data.get('setup_quality'),
             ticker=data.get('ticker'),
@@ -444,7 +685,11 @@ def manage_trades():
             'total_score': scores['total_score'],
         })
 
-    trades = Trade.query.order_by(Trade.position.asc()).all()
+    trades = (
+        Trade.query.filter_by(account_id=get_active_account().id)
+        .order_by(Trade.position.asc())
+        .all()
+    )
     result = []
     for t in trades:
         result.append({
@@ -467,13 +712,19 @@ def move_trade(id, direction):
 
     if direction == 'up':
         adjacent = (
-            Trade.query.filter(Trade.position < trade.position)
+            Trade.query.filter(
+                Trade.account_id == trade.account_id,
+                Trade.position < trade.position,
+            )
             .order_by(Trade.position.desc())
             .first()
         )
     elif direction == 'down':
         adjacent = (
-            Trade.query.filter(Trade.position > trade.position)
+            Trade.query.filter(
+                Trade.account_id == trade.account_id,
+                Trade.position > trade.position,
+            )
             .order_by(Trade.position.asc())
             .first()
         )

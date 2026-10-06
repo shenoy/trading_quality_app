@@ -1,0 +1,112 @@
+{% from '_account_macros.html' import money, signed, tone %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accounts</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+    <div class="container">
+        <a class="navbar-brand" href="/">Trading Tracker</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/">Dashboard & Chart</a>
+                <a class="nav-link" href="/trades-list">View All Trades</a>
+                <a class="nav-link" href="/ibkr">IBKR Trades</a>
+                <a class="nav-link" href="/ibkr-charts">IBKR Charts</a>
+                <a class="nav-link active" href="/accounts">Accounts</a>
+                <a class="nav-link" href="/settings">Settings</a>
+            </div>
+    </div>
+    </nav>
+
+<div class="container pb-5">
+    <h2 class="mb-3">Accounts</h2>
+
+    {% if message %}
+    <div class="alert alert-{{ message[0] }}">{{ message[1] }}</div>
+    {% endif %}
+
+    <div class="row g-4">
+        <div class="col-lg-4">
+            <div class="card shadow-sm p-4">
+                <h5 class="mb-3">Add an account</h5>
+                {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+                {% endif %}
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Account name</label>
+                        <input type="text" class="form-control" name="name" maxlength="60"
+                               value="{{ form.name }}" placeholder="e.g., Prop firm 50k" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Starting balance ($)</label>
+                        <input type="number" step="any" class="form-control" name="starting_balance"
+                               value="{{ form.starting_balance }}" placeholder="e.g., 50000" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Create account</button>
+                </form>
+                <p class="text-muted small mt-3 mb-0">
+                    Each account has its own trades, charts and balance. Creating one opens its dashboard.
+                </p>
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            <div class="card shadow-sm p-4">
+                <div class="table-responsive">
+                    <table class="table table-striped align-middle mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Account</th>
+                                <th>Trades</th>
+                                <th>Starting</th>
+                                <th>Latest equity</th>
+                                <th>Change</th>
+                                <th>Net P/L</th>
+                                <th>Avg score</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for a in accounts %}
+                            {% set s = account_summary(a) %}
+                            <tr>
+                                <td>
+                                    <strong>{{ a.name }}</strong>
+                                    {% if a.id == active_account.id %}<span class="badge bg-primary ms-1">Active</span>{% endif %}
+                                </td>
+                                <td>{{ s.trade_count }}</td>
+                                <td>{% if s.starting_balance is none %}<span class="text-muted">not set</span>{% else %}{{ money(s.starting_balance) }}{% endif %}</td>
+                                <td>{{ money(s.latest_equity) }}</td>
+                                <td class="{{ tone(s.change) }}">{{ signed(s.change) }}{% if s.change_pct is not none %} <small>({{ '%+.2f' | format(s.change_pct) }}%)</small>{% endif %}</td>
+                                <td class="{{ tone(s.net_pl) }}">{{ signed(s.net_pl) }}</td>
+                                <td>{% if s.avg_score is none %}&mdash;{% else %}{{ '%.1f' | format(s.avg_score) }}{% endif %}</td>
+                                <td class="text-nowrap">
+                                    <a href="/accounts/switch/{{ a.id }}" class="btn btn-primary btn-sm">Dashboard</a>
+                                    <a href="/accounts/switch/{{ a.id }}?next=/trades-list" class="btn btn-outline-secondary btn-sm">Trades</a>
+                                    <a href="/accounts/edit/{{ a.id }}" class="btn btn-warning btn-sm">Edit</a>
+                                    <form method="POST" action="/accounts/delete/{{ a.id }}" class="d-inline" data-name="{{ a.name }}"
+                                          onsubmit="return confirm('Delete the account \u201C' + this.dataset.name + '\u201D? This cannot be undone.');">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-muted small mt-3 mb-0">
+                    Change = latest equity minus the starting balance. Net P/L = the sum of risk &times; R:R over the account's trades.
+                    An account can only be deleted once it has no trades.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

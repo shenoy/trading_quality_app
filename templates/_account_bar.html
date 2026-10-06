@@ -1,0 +1,28 @@
+{% from '_account_macros.html' import money, signed, tone %}
+{% set s = account_summary(active_account) %}
+<div class="container mb-3">
+    <div class="card shadow-sm px-3 py-2">
+        <div class="d-flex flex-wrap align-items-center gap-3">
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-muted small">Account</span>
+                <select class="form-select form-select-sm w-auto fw-semibold" aria-label="Choose account"
+                        onchange="window.location.href='/accounts/switch/' + this.value + '?next=' + encodeURIComponent(window.location.pathname)">
+                    {% for a in accounts %}
+                    <option value="{{ a.id }}" {% if a.id == active_account.id %}selected{% endif %}>{{ a.name }}</option>
+                    {% endfor %}
+                </select>
+                <a href="/accounts" class="btn btn-outline-secondary btn-sm">Manage accounts</a>
+            </div>
+            <div class="ms-auto d-flex flex-wrap gap-4 small">
+                <div><span class="text-muted">Starting balance</span>
+                    <strong>{% if s.starting_balance is none %}not set{% else %}{{ money(s.starting_balance) }}{% endif %}</strong></div>
+                <div><span class="text-muted">Latest equity</span> <strong>{{ money(s.latest_equity) }}</strong></div>
+                {% if s.change is not none %}
+                <div><span class="text-muted">Change</span>
+                    <strong class="{{ tone(s.change) }}">{{ signed(s.change) }}{% if s.change_pct is not none %} ({{ '%+.2f' | format(s.change_pct) }}%){% endif %}</strong></div>
+                {% endif %}
+                <div><span class="text-muted">Trades</span> <strong>{{ s.trade_count }}</strong></div>
+            </div>
+        </div>
+    </div>
+</div>
