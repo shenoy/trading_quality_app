@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import from Excel</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+    <div class="container">
+        <a class="navbar-brand" href="/">Trading Tracker</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/">Dashboard & Chart</a>
+                <a class="nav-link" href="/trades-list">View All Trades</a>
+                <a class="nav-link" href="/ibkr">IBKR Trades</a>
+                <a class="nav-link" href="/ibkr-charts">IBKR Charts</a>
+                <a class="nav-link" href="/accounts">Accounts</a>
+                <a class="nav-link" href="/settings">Settings</a>
+            </div>
+    </div>
+    </nav>
+
+{% include '_account_bar.html' %}
+
+<div class="container pb-5">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="m-0">Import from Excel</h2>
+        <a href="/trades-list" class="btn btn-outline-secondary btn-sm">Back to All Trades</a>
+    </div>
+
+    {% if filled is not none or added is not none %}
+    <div class="alert alert-success">
+        {% if added %}Added <strong>{{ added }}</strong> new trade{{ '' if added == 1 else 's' }}.{% endif %}
+        {% if filled %}Filled <strong>{{ filled }}</strong> screenshot link{{ '' if filled == 1 else 's' }}.{% endif %}
+        {% if not added and not filled %}Nothing was changed.{% endif %}
+        {% if skipped or add_skipped %}<div class="small mt-1">{{ (skipped or 0) + (add_skipped or 0) }} item{{ '' if ((skipped or 0) + (add_skipped or 0)) == 1 else 's' }} skipped (already had a screenshot, already in the app, or not valid).</div>{% endif %}
+        <a href="/trades-list" class="alert-link small">View All Trades</a>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+
+    {% if stage == 'upload' %}
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="card shadow-sm p-4">
+                <h5 class="mb-3">Upload your sheet</h5>
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <input type="file" class="form-control" name="file" accept=".xlsx,.xlsm,.csv" required>
+                    </div>
+                    <details class="mb-3">
+                        <summary class="small text-muted">Column letters (only if auto-detect gets them wrong)</summary>
+                        <div class="row g-2 mt-1">
+                            <div class="col-4"><input type="text" class="form-control form-control-sm" name="risk_col" maxlength="2" placeholder="Risk, e.g. B"></div>
+                            <div class="col-4"><input type="text" class="form-control form-control-sm" name="rr_col" maxlength="2" placeholder="R:R, e.g. D"></div>
+                            <div class="col-4"><input type="text" class="form-control form-control-sm" name="equity_col" maxlength="2" placeholder="Equity, e.g. Q"></div>
+                        </div>
+                    </details>
+                    <button type="submit" class="btn btn-primary w-100">Upload and preview</button>
+                </form>
+                <p class="text-muted small mt-3 mb-0">
+                    Nothing is saved yet. You'll see exactly what will change and can untick anything before confirming.
+                </p>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card shadow-sm p-4">
+                <h5 class="mb-3">What it does</h5>
+                <p class="mb-2">
+                    <strong>{{ account.name }}</strong> has {{ total_trades }} trade{{ '' if total_trades == 1 else 's' }};
+                    <strong>{{ missing_now }}</strong> {{ 'has' if missing_now == 1 else 'have' }} no screenshot yet.
+                </p>
+                <ul class="mb-0 small">
+                    <li>Each row in your sheet is matched to a trade by <strong>ticker + date + entry time</strong>.</li>
+                    <li><strong>Missing screenshots</strong> are filled in. A screenshot you already have is never changed.</li>
+                    <li><strong>Rows that aren't in the app</strong> can be added as new trades. Setup quality is guessed from the notes; the other questions are set to No. You can change them in the preview.</li>
+                    <li>Only the account shown above is touched.</li>
+                    <li>The sheet needs a ticker, date and entry time. To fill screenshots it needs a screenshot link column; to add new trades it needs risk, R:R and equity. A header row isn't required.</li>
+                    <li>Works with .xlsx and .csv files.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+    {# ------------------------------ PREVIEW ------------------------------ #}
+    <p class="text-muted">Checked against the trades in <strong>{{ account.name }}</strong>. Nothing has been saved yet.</p>
+
+    {% for sheet in result.sheets %}
+    <div class="small mb-1 {{ 'text-danger' if sheet.problem else 'text-muted' }}">
+        Sheet &ldquo;{{ sheet.name }}&rdquo;:
+        {% if sheet.problem %}{{ sheet.problem }}
+        {% else %}ticker = column {{ sheet.columns.ticker }}, date = {{ sheet.columns.date }}, time = {{ sheet.columns.time }},
+        {% if sheet.columns.link %}link = {{ sheet.columns.link }}{% else %}no screenshot-link column (nothing to fill){% endif %}{% if sheet.extra.risk %}, risk = {{ sheet.extra.risk }}{% endif %}{% if sheet.extra.rr %}, R:R = {{ sheet.extra.rr }}{% endif %}{% if sheet.extra.equity %}, equity = {{ sheet.extra.equity }}{% endif %}{% if sheet.extra.notes %}, notes = {{ sheet.extra.notes }}{% endif %}
+        &mdash; {{ sheet.rows }} trade row{{ '' if sheet.rows == 1 else 's' }} read.
+        {% if sheet.cant_add %}<span class="text-warning-emphasis">New trades can't be added from this sheet: no {{ sheet.cant_add | join(', ') }} column found. Enter the column letters on the upload page and try again.</span>{% endif %}
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    <div class="d-flex flex-wrap gap-2 my-3">
+        <span class="badge bg-success fs-6">{{ result.fills | length }} screenshots to fill</span>
+        <span class="badge bg-primary fs-6">{{ result.new_total }} new trade{{ '' if result.new_total == 1 else 's' }} to add</span>
+        <span class="badge bg-secondary fs-6">{{ result.already_same + result.kept_different | length }} already have a screenshot</span>
+        <span class="badge bg-warning text-dark fs-6">{{ result.unmatched_total }} rows can't be used</span>
+        <span class="badge bg-danger fs-6">{{ result.still_missing | length }} trades will still have no screenshot</span>
+    </div>
+
+    {% if result.fills or result.new_trades %}
+    <form method="POST" action="/import-screenshots/apply">
+
+        {% if result.fills %}
+        <div class="card shadow-sm p-4 mb-4">
+            <h5 class="mb-3">Screenshots that will be filled</h5>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th><input type="checkbox" class="form-check-input" checked aria-label="Select all"
+                                       onchange="document.querySelectorAll('.fill-check').forEach(c => c.checked = this.checked)"></th>
+                            <th>ID</th>
+                            <th>Ticker</th>
+                            <th>Entry</th>
+                            <th>Link found in the sheet</th>
+                            <th>Source</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in result.fills %}
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input fill-check" name="apply" value="{{ f.trade.id }}" checked></td>
+                            <td>{{ f.trade.id }}</td>
+                            <td><strong>{{ f.trade.ticker }}</strong></td>
+                            <td>{{ f.trade.entry_datetime | replace('T', ' ') }}</td>
+                            <td>
+                                <a href="{{ f.url }}" target="_blank" rel="noopener noreferrer">{{ f.url }}</a>
+                                <input type="hidden" name="url_{{ f.trade.id }}" value="{{ f.url }}">
+                            </td>
+                            <td class="text-muted small">{{ f.sheet }}, row {{ f.row }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if result.new_trades %}
+        <div class="card shadow-sm p-4 mb-4">
+            <h5 class="mb-1">New trades found in the sheet</h5>
+            <p class="small text-muted">
+                These rows aren't in <strong>{{ account.name }}</strong> yet. They're added in date order with the risk, R:R,
+                equity and link from the sheet. Setup quality is guessed from the notes &mdash; change any of them below.
+                Profit taken, stop loss moved to zero and the four psychology questions are set to <strong>No</strong>.
+            </p>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">&ldquo;Risk under 0.5%?&rdquo; for these trades</label>
+                    <select name="answer_risk" class="form-select form-select-sm">
+                        <option value="no" selected>No ({{ '%+g' | format(points.risk[1]) }} points)</option>
+                        <option value="yes">Yes ({{ '%+g' | format(points.risk[0]) }} points)</option>
+                        <option value="blank">Leave unanswered (0 points)</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">&ldquo;Daily drawdown under 1.5%?&rdquo; for these trades</label>
+                    <select name="answer_daily" class="form-select form-select-sm">
+                        <option value="no" selected>No ({{ '%+g' | format(points.daily[1]) }} points)</option>
+                        <option value="yes">Yes ({{ '%+g' | format(points.daily[0]) }} points)</option>
+                        <option value="blank">Leave unanswered (0 points)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th><input type="checkbox" class="form-check-input" checked aria-label="Select all"
+                                       onchange="document.querySelectorAll('.add-check').forEach(c => c.checked = this.checked)"></th>
+                            <th>Ticker</th>
+                            <th>Entry</th>
+                            <th>Risk</th>
+                            <th>R:R</th>
+                            <th>P/L</th>
+                            <th>Equity</th>
+                            <th>Setup</th>
+                            <th>Notes from the sheet</th>
+                            <th>Link</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for n in result.new_trades %}
+                        <tr>
+                            <td>
+                                <input type="checkbox" class="form-check-input add-check" name="add" value="{{ loop.index0 }}" checked>
+                                <input type="hidden" name="row_{{ loop.index0 }}" value="{{ n.payload }}">
+                            </td>
+                            <td><strong>{{ n.ticker }}</strong></td>
+                            <td class="text-nowrap">{{ n.when_text }}</td>
+                            <td>${{ '{:,.2f}'.format(n.risk) }}</td>
+                            <td>{{ '%.4g' | format(n.rr) }}</td>
+                            <td class="fw-semibold {{ 'text-success' if n.pl > 0 else 'text-danger' if n.pl < 0 else '' }}">{{ '+' if n.pl > 0 else '-' if n.pl < 0 else '' }}${{ '{:,.2f}'.format(n.pl | abs) }}</td>
+                            <td>{{ '{:,.2f}'.format(n.equity) }}</td>
+                            <td>
+                                <select class="form-select form-select-sm" name="quality_{{ loop.index0 }}">
+                                    <option value="good" {% if n.quality == 'good' %}selected{% endif %}>good</option>
+                                    <option value="medium" {% if n.quality == 'medium' %}selected{% endif %}>medium</option>
+                                    <option value="bad" {% if n.quality == 'bad' %}selected{% endif %}>bad</option>
+                                </select>
+                            </td>
+                            <td class="small text-muted" title="{{ n.notes }}">{{ n.notes[:70] }}{% if n.notes | length > 70 %}&hellip;{% endif %}</td>
+                            <td>{% if n.url %}<a href="{{ n.url }}" target="_blank" rel="noopener noreferrer">link</a>{% else %}&mdash;{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if result.new_total > result.new_trades | length %}
+            <p class="text-muted small mt-2 mb-0">Showing the first {{ result.new_trades | length }} of {{ result.new_total }}; upload again after applying to see the rest.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-success">Apply the ticked changes</button>
+        <a href="/import-screenshots" class="btn btn-outline-secondary">Cancel</a>
+    </form>
+    {% else %}
+    <div class="card shadow-sm p-4 mb-4">
+        <h5 class="mb-2">Nothing to apply</h5>
+        <p class="mb-3">No screenshot can be filled and no new trade was found for {{ account.name }}.</p>
+        <div><a href="/import-screenshots" class="btn btn-outline-secondary">Try another file</a></div>
+    </div>
+    {% endif %}
+
+    <div class="mt-4">
+    {% if result.unmatched_total %}
+    <details class="card shadow-sm p-3 mb-3">
+        <summary class="fw-semibold">Sheet rows that can't be used ({{ result.unmatched_total }})</summary>
+        <div class="table-responsive mt-3">
+            <table class="table table-sm align-middle">
+                <thead><tr><th>Source</th><th>Ticker</th><th>Entry</th><th>Link</th><th>Why</th></tr></thead>
+                <tbody>
+                    {% for u in result.unmatched %}
+                    <tr>
+                        <td class="text-muted small">{{ u.sheet }}, row {{ u.row }}</td>
+                        <td>{{ u.ticker }}</td>
+                        <td>{{ u.when }}</td>
+                        <td>{% if u.url %}<a href="{{ u.url }}" target="_blank" rel="noopener noreferrer">link</a>{% else %}&mdash;{% endif %}</td>
+                        <td class="small">{{ u.reason }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if result.unmatched_total > result.unmatched | length %}
+            <p class="text-muted small">Showing the first {{ result.unmatched | length }} of {{ result.unmatched_total }}.</p>
+            {% endif %}
+        </div>
+    </details>
+    {% endif %}
+
+    {% if result.still_missing %}
+    <details class="card shadow-sm p-3 mb-3">
+        <summary class="fw-semibold">Trades that will still have no screenshot ({{ result.still_missing | length }})</summary>
+        <div class="table-responsive mt-3">
+            <table class="table table-sm align-middle">
+                <thead><tr><th>ID</th><th>Ticker</th><th>Entry</th></tr></thead>
+                <tbody>
+                    {% for t in result.still_missing %}
+                    <tr><td>{{ t.id }}</td><td>{{ t.ticker }}</td><td>{{ t.entry_datetime | replace('T', ' ') }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </details>
+    {% endif %}
+
+    {% if result.kept_different %}
+    <details class="card shadow-sm p-3 mb-3">
+        <summary class="fw-semibold">Screenshot already saved and different from the sheet &mdash; kept ({{ result.kept_different | length }})</summary>
+        <div class="table-responsive mt-3">
+            <table class="table table-sm align-middle">
+                <thead><tr><th>ID</th><th>Ticker</th><th>Entry</th><th>Saved</th><th>In the sheet</th></tr></thead>
+                <tbody>
+                    {% for k in result.kept_different %}
+                    <tr>
+                        <td>{{ k.trade.id }}</td><td>{{ k.trade.ticker }}</td><td>{{ k.trade.entry_datetime | replace('T', ' ') }}</td>
+                        <td><a href="{{ k.trade.screenshot_url }}" target="_blank" rel="noopener noreferrer">saved</a></td>
+                        <td><a href="{{ k.url }}" target="_blank" rel="noopener noreferrer">sheet</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </details>
+    {% endif %}
+
+    {% if result.rows_without_link %}
+    <p class="text-muted small">{{ result.rows_without_link }} sheet row{{ '' if result.rows_without_link == 1 else 's' }} matched a trade but had no screenshot link.</p>
+    {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+</body>
+</html>

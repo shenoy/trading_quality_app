@@ -1,5 +1,10 @@
-from datetime import datetime
+import csv
+import io
+import itertools
+import json
+import math
 import re
+from datetime import date as date_type, datetime, time as time_type, timedelta
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
@@ -554,6 +559,710 @@ def delete_account(id):
 def switch_account(id):
     account = Account.query.get_or_404(id)
     return switch_to(account, request.args.get('next', '/'))
+
+
+# --- IMPORT FROM EXCEL ---
+# Upload an Excel sheet (.xlsx) or a CSV. Two things can come out of it, and
+# both only happen after you confirm a preview:
+#   1. Trades that have no screenshot yet get their link from the sheet
+#      (matched by ticker + entry date + entry time; a saved link is never changed).
+#   2. Rows that are in the sheet but not in the app can be added as new trades.
+#      The sheet can't answer the app's yes/no questions, so those get defaults:
+#      setup quality is guessed from the notes, everything else is "No".
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_SHEET_ROWS = 20000
+MAX_SHEET_COLUMNS = 60
+MAX_LISTED_ROWS = 300
+MAX_NEW_TRADES = 2000
+
+# The preview form sends a few fields per row, so allow big sheets through.
+app.config['MAX_FORM_PARTS'] = 20000
+app.config['MAX_FORM_MEMORY_SIZE'] = 10 * 1024 * 1024
+app.request_class.max_form_parts = 20000
+app.request_class.max_form_memory_size = 10 * 1024 * 1024
+
+COLUMN_NAMES = {
+    'ticker': 'a ticker column (e.g. GBPCAD)',
+    'date': 'a date column',
+    'time': 'an entry time column',
+    'link': 'a screenshot link column',
+}
+
+class UploadError(Exception):
+    """A problem with the uploaded file, worded for the person uploading it."""
+
+
+def column_letter(index):
+    letters = ''
+    index += 1
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters
+
+
+def normalize_ticker(value):
+    return re.sub(r'[^A-Z0-9]', '', str(value or '').upper())
+
+
+TICKER_PATTERN = re.compile(r'^(?=(?:.*[A-Z]){2})[A-Z][A-Z0-9]{2,9}$')
+
+
+def looks_like_ticker(value):
+    return isinstance(value, str) and bool(TICKER_PATTERN.match(normalize_ticker(value)))
+
+
+def clean_url(value, hyperlink=None):
+    """A usable http(s) link from a cell's text or its hyperlink, else None."""
+    for candidate in (value, hyperlink):
+        link = str(candidate).strip() if candidate is not None else ''
+        if (
+            link.lower().startswith(('http://', 'https://'))
+            and not re.search(r'\s', link)
+            and len(link) <= 500
+        ):
+            return link
+    return None
+
+
+DATE_FORMATS = [
+    '%d-%b-%Y', '%d-%b', '%d %b %Y', '%d %b', '%d-%B-%Y', '%d-%B',
+    '%d %B %Y', '%d %B', '%d/%m/%Y', '%d/%m/%y', '%Y-%m-%d', '%d.%m.%Y',
+]
+TIME_PATTERN = re.compile(r'^(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp][Mm])?$')
+
+
+def parse_date_cell(value):
+    """(year or None, month, day) from a date cell, or None."""
+    if isinstance(value, datetime):
+        if value.year < 1990:  # a time-only value stored as a datetime
+            return None
+        return value.year, value.month, value.day
+    if isinstance(value, date_type):
+        return value.year, value.month, value.day
+    if isinstance(value, str):
+        text_value = value.strip()
+        for fmt in DATE_FORMATS:
+            has_year = '%Y' in fmt or '%y' in fmt
+            try:
+                if has_year:
+                    parsed = datetime.strptime(text_value, fmt)
+                else:  # "2-Oct" has no year; 2000 is just a placeholder
+                    parsed = datetime.strptime(text_value + ' 2000', fmt + ' %Y')
+            except ValueError:
+                continue
+            return (parsed.year if has_year else None), parsed.month, parsed.day
+    return None
+
+
+def parse_time_cell(value):
+    """(hour, minute) from a time cell, or None."""
+    if isinstance(value, datetime):
+        if value.year >= 1990 and value.hour == 0 and value.minute == 0:
+            return None  # a plain date
+        return value.hour, value.minute
+    if isinstance(value, time_type):
+        return value.hour, value.minute
+    if isinstance(value, timedelta):
+        minutes = int(value.total_seconds() // 60)
+        return divmod(minutes, 60) if 0 <= minutes < 1440 else None
+    if isinstance(value, str):
+        match = TIME_PATTERN.match(value.strip())
+        if match:
+            hour, minute, meridiem = int(match.group(1)), int(match.group(2)), match.group(3)
+            if meridiem:
+                hour = hour % 12 + (12 if meridiem.lower() == 'pm' else 0)
+            if hour < 24 and minute < 60:
+                return hour, minute
+    return None
+
+
+def parse_entry_datetime(value):
+    """The app stores entry times as text such as 2026-10-06T11:16."""
+    value = str(value or '').strip().replace('T', ' ')
+    for candidate in (value, value[:16]):
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M'):
+            try:
+                return datetime.strptime(candidate, fmt)
+            except ValueError:
+                continue
+    return None
+
+
+def has_screenshot(trade):
+    return bool((trade.screenshot_url or '').strip())
+
+
+def read_sheets(filename, data):
+    """Returns [(sheet name, rows)]; each row is a list of (value, hyperlink)."""
+    extension = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+    if extension in ('xlsx', 'xlsm'):
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            raise UploadError(
+                "Reading Excel files needs the 'openpyxl' package. "
+                'Install it with:  pip install openpyxl'
+            )
+        try:
+            workbook = load_workbook(io.BytesIO(data), data_only=True)
+        except Exception:
+            raise UploadError(
+                "That file couldn't be read as an Excel workbook. "
+                'Is it a real .xlsx file?'
+            )
+        sheets = []
+        for sheet in workbook.worksheets:
+            rows = []
+            for row in sheet.iter_rows(
+                max_row=min(sheet.max_row or 1, MAX_SHEET_ROWS),
+                max_col=min(sheet.max_column or 1, MAX_SHEET_COLUMNS),
+            ):
+                cells = []
+                for cell in row:
+                    link = getattr(cell, 'hyperlink', None)
+                    cells.append((cell.value, link.target if link else None))
+                rows.append(cells)
+            sheets.append((sheet.title, rows))
+        return sheets
+    if extension == 'csv':
+        text_data = data.decode('utf-8-sig', errors='replace')
+        reader = csv.reader(io.StringIO(text_data))
+        rows = [[(cell, None) for cell in row[:MAX_SHEET_COLUMNS]] for row in reader]
+        return [('CSV file', rows[:MAX_SHEET_ROWS])]
+    if extension == 'xls':
+        raise UploadError(
+            'That is an old-style .xls file. In Excel use File > Save As > '
+            '"Excel Workbook (.xlsx)" and upload that file instead.'
+        )
+    raise UploadError('Please upload an Excel file (.xlsx) or a .csv file.')
+
+
+def parse_number(value):
+    """A finite number from a cell (also accepts '1,234.5' or '$50'), else None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        cleaned = value.strip().replace(',', '').replace('$', '')
+        if not cleaned:
+            return None
+        try:
+            number = float(cleaned)
+        except ValueError:
+            return None
+    else:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def format_ratio(number):
+    text_value = ('%.4f' % number).rstrip('0').rstrip('.')
+    return '0' if text_value in ('', '-0') else text_value
+
+
+HEADER_NAMES = {
+    'risk': {'risk', 'riskamount', 'riskusd', 'riskdollars', 'riskinusd'},
+    'rr': {'rr', 'riskreward', 'riskrewardratio', 'rratio', 'rmultiple'},
+    'equity': {'equity', 'balance', 'accountbalance', 'currentequity', 'accountequity'},
+    'notes': {'notes', 'note', 'comment', 'comments', 'description', 'remarks'},
+}
+
+
+def parse_column_letter(text_value):
+    """'B' -> 1, 'aa' -> 26. Anything else -> None."""
+    text_value = (text_value or '').strip().upper()
+    if not re.fullmatch(r'[A-Z]{1,2}', text_value):
+        return None
+    index = 0
+    for letter in text_value:
+        index = index * 26 + (ord(letter) - 64)
+    return index - 1
+
+
+def detect_columns(rows):
+    """Finds the ticker / date / time / link columns by looking at the data
+    itself, so it works whether or not the sheet has a header row."""
+    width = max((len(row) for row in rows), default=0)
+    link_count = [0] * width
+    date_count = [0] * width
+    time_count = [0] * width
+    upper_tickers = [set() for _ in range(width)]
+    any_tickers = [set() for _ in range(width)]
+    for row in rows:
+        for j, (value, hyperlink) in enumerate(row):
+            if clean_url(value, hyperlink):
+                link_count[j] += 1
+            if parse_date_cell(value):
+                date_count[j] += 1
+            if parse_time_cell(value):
+                time_count[j] += 1
+            if looks_like_ticker(value):
+                any_tickers[j].add(normalize_ticker(value))
+                if value.strip() == value.strip().upper():
+                    upper_tickers[j].add(normalize_ticker(value))
+
+    def most(scores):
+        top = max(scores, default=0)
+        return scores.index(top) if top > 0 else None
+
+    def leftmost_common(counts):
+        top = max(counts, default=0)
+        if top == 0:
+            return None
+        return next(j for j, n in enumerate(counts) if n >= top * 0.5)
+
+    # The ticker column is the one with the most *different* ticker-like values
+    # (a Short/Long column only has two). Upper-case matches win.
+    ticker_sets = upper_tickers if any(upper_tickers) else any_tickers
+    columns = {
+        'ticker': most([len(s) for s in ticker_sets]),
+        'date': leftmost_common(date_count),
+        'time': leftmost_common(time_count),
+        'link': most(link_count),
+    }
+    # A screenshot-link column is optional (it's only needed to fill screenshots).
+    required = ('ticker', 'date', 'time')
+    return columns, [name for name in required if columns[name] is None]
+
+
+def detect_extra_columns(rows, columns, overrides):
+    """Finds Risk, R:R, Equity and Notes (needed to add new trades).
+
+    Order of trust: column letters typed on the upload page, then header names,
+    then the data itself: Risk and R:R are the two columns whose product is the
+    P/L column, Equity is the right-most remaining number column, Notes is the
+    column with the longest text."""
+    found = {'risk': None, 'rr': None, 'equity': None, 'notes': None}
+    used = {index for index in columns.values() if index is not None}
+    for row in rows[:10]:
+        for j, (value, _) in enumerate(row):
+            if isinstance(value, str):
+                key = re.sub(r'[^a-z0-9]', '', value.lower())
+                for name, options in HEADER_NAMES.items():
+                    if key in options and found[name] is None and j not in used:
+                        found[name] = j
+    for name, letter in overrides.items():
+        index = parse_column_letter(letter)
+        if index is not None:
+            found[name] = index
+
+    # rows that look like trades (used to read the numbers)
+    trade_rows = []
+    for number, row in enumerate(rows, start=1):
+        def at(name):
+            index = columns[name]
+            return row[index][0] if index < len(row) else None
+        if looks_like_ticker(at('ticker')) and parse_date_cell(at('date')) and parse_time_cell(at('time')):
+            trade_rows.append(number)
+    sample = trade_rows[:300]
+    taken = used | {i for i in found.values() if i is not None}
+    width = max((len(r) for r in rows), default=0)
+
+    numeric = {}
+    for j in range(min(width, MAX_SHEET_COLUMNS)):
+        if j in taken:
+            continue
+        values = [parse_number(rows[n - 1][j][0]) if j < len(rows[n - 1]) else None for n in sample]
+        if sample and sum(v is not None for v in values) >= 0.6 * len(values):
+            numeric[j] = values
+
+    if found['risk'] is None and found['rr'] is None:
+        best_matches, best = 0, None
+        for r, x, p in itertools.permutations(list(numeric)[:15], 3):
+            if r > x:
+                continue  # risk x R:R = P/L, so r and x are interchangeable here
+            total = matches = 0
+            for vr, vx, vp in zip(numeric[r], numeric[x], numeric[p]):
+                if vr is None or vx is None or vp is None:
+                    continue
+                total += 1
+                if abs(vr * vx - vp) <= max(0.5, 0.01 * abs(vp)):
+                    matches += 1
+            if total >= 3 and matches >= 0.7 * total and matches > best_matches:
+                best_matches, best = matches, (r, x, p)
+        if best:
+            r, x, p = best
+            median = lambda col: sorted(abs(v) for v in numeric[col] if v is not None)[
+                len([v for v in numeric[col] if v is not None]) // 2]
+            risk, ratio = (r, x) if median(r) >= median(x) else (x, r)
+            found['risk'], found['rr'] = risk, ratio
+            taken |= {r, x, p}
+            numeric = {j: v for j, v in numeric.items() if j not in taken}
+
+    if found['equity'] is None:
+        candidates = [
+            j for j, values in numeric.items()
+            if j not in taken and sum(v is not None for v in values) >= 0.8 * len(values)
+        ]
+        if candidates:
+            found['equity'] = max(candidates)
+    taken |= {i for i in found.values() if i is not None}
+
+    if found['notes'] is None:
+        best_length, best_col = 0, None
+        for j in range(min(width, MAX_SHEET_COLUMNS)):
+            if j in taken:
+                continue
+            lengths = [
+                len(rows[n - 1][j][0].strip())
+                for n in sample
+                if j < len(rows[n - 1]) and isinstance(rows[n - 1][j][0], str)
+                and not clean_url(rows[n - 1][j][0], rows[n - 1][j][1])
+            ]
+            if lengths and sum(lengths) / len(lengths) > best_length:
+                best_length, best_col = sum(lengths) / len(lengths), j
+        if best_length >= 12:
+            found['notes'] = best_col
+    return found
+
+
+def parse_sheet_rows(rows, columns):
+    """columns holds every column index (ticker, date, time, link, risk, rr,
+    equity, notes); the last four may be None."""
+    entries = []
+    for number, row in enumerate(rows, start=1):
+        def cell(name):
+            index = columns.get(name)
+            if index is None or index >= len(row):
+                return (None, None)
+            return row[index]
+
+        ticker = cell('ticker')[0]
+        date_parts = parse_date_cell(cell('date')[0])
+        time_parts = parse_time_cell(cell('time')[0])
+        if not looks_like_ticker(ticker) or not date_parts or not time_parts:
+            continue  # header, blank or unrelated row
+        link_value, link_target = cell('link')
+        notes = cell('notes')[0]
+        entries.append({
+            'row': number,
+            'ticker': normalize_ticker(ticker),
+            'year': date_parts[0],
+            'month': date_parts[1],
+            'day': date_parts[2],
+            'hour': time_parts[0],
+            'minute': time_parts[1],
+            'url': clean_url(link_value, link_target),
+            'risk': parse_number(cell('risk')[0]),
+            'rr': parse_number(cell('rr')[0]),
+            'equity': parse_number(cell('equity')[0]),
+            'notes': notes.strip() if isinstance(notes, str) else '',
+        })
+    return entries
+
+
+def describe_excel_time(entry):
+    text_value = datetime(2000, entry['month'], entry['day']).strftime('%d %b')
+    if entry['year']:
+        text_value += f" {entry['year']}"
+    return f"{text_value} {entry['hour']:02d}:{entry['minute']:02d}"
+
+
+def entry_datetime_text(entry):
+    """The app's own format, e.g. 2026-10-06T11:16. A sheet date without a
+    year gets this year (or last year if that would be in the future)."""
+    year = entry['year']
+    if year is None:
+        today = datetime.now()
+        year = today.year
+        try:
+            if datetime(year, entry['month'], entry['day']) > today + timedelta(days=7):
+                year -= 1
+        except ValueError:
+            year -= 1  # 29 Feb in a non-leap year
+    return f"{year:04d}-{entry['month']:02d}-{entry['day']:02d}T{entry['hour']:02d}:{entry['minute']:02d}"
+
+
+def setup_from_notes(notes):
+    """Best guess of Good / Medium / Bad from the trade's note. 'bad' wins, then
+    'good'; 'decent' or no clue at all means Medium. It's only a starting point:
+    the preview lets you change it for every trade."""
+    note = (notes or '').lower()
+    if re.search(r'\bbad\b|not a good|not good|forcing|\bpoor\b', note):
+        return 'bad'
+    if re.search(r'\b(perfect|good|great|excellent)\b', note):
+        return 'good'
+    return 'medium'
+
+
+def build_import_preview(account, sheets, overrides):
+    """Works out what the sheet(s) can fill in and which rows are new."""
+    trades = (
+        Trade.query.filter_by(account_id=account.id)
+        .order_by(Trade.position.asc(), Trade.id.asc())
+        .all()
+    )
+    index = {}
+    for trade in trades:
+        when = parse_entry_datetime(trade.entry_datetime)
+        if when:
+            key = (normalize_ticker(trade.ticker), when.month, when.day, when.hour, when.minute)
+            index.setdefault(key, []).append((trade, when))
+
+    sheet_notes, unmatched, kept_different, proposals, new_trades = [], [], [], {}, []
+    seen_new = set()
+    rows_read = rows_without_link = already_same = 0
+    for name, rows in sheets:
+        columns, missing = detect_columns(rows)
+        if missing:
+            sheet_notes.append({
+                'name': name, 'columns': None, 'extra': None,
+                'problem': 'Skipped: could not find '
+                + ', '.join(COLUMN_NAMES[m] for m in missing) + '.',
+            })
+            continue
+        extra = detect_extra_columns(rows, columns, overrides)
+        entries = parse_sheet_rows(rows, {**columns, **extra})
+        letters = lambda cols: {k: (column_letter(v) if v is not None else None) for k, v in cols.items()}
+        sheet_notes.append({
+            'name': name, 'columns': letters(columns), 'extra': letters(extra),
+            'rows': len(entries), 'problem': None,
+            'cant_add': [label for label, key in (('Risk', 'risk'), ('R:R', 'rr'), ('Equity', 'equity')) if extra[key] is None],
+        })
+        rows_read += len(entries)
+        for entry in entries:
+            entry['sheet'] = name
+            key = (entry['ticker'], entry['month'], entry['day'], entry['hour'], entry['minute'])
+            candidates = [
+                trade for trade, when in index.get(key, [])
+                if entry['year'] is None or when.year == entry['year']
+            ]
+            shown = {
+                'sheet': name, 'row': entry['row'], 'ticker': entry['ticker'],
+                'when': describe_excel_time(entry), 'url': entry['url'],
+            }
+            if len(candidates) > 1:
+                unmatched.append(dict(shown, reason=f'{len(candidates)} trades match this row, so it is ambiguous.'))
+            elif len(candidates) == 1:
+                trade = candidates[0]
+                if not entry['url']:
+                    rows_without_link += 1
+                elif has_screenshot(trade):
+                    if trade.screenshot_url.strip() == entry['url']:
+                        already_same += 1
+                    else:
+                        kept_different.append({'trade': trade, 'url': entry['url']})
+                else:
+                    proposals.setdefault(trade.id, {'trade': trade, 'entries': []})['entries'].append(entry)
+            else:  # not in the app
+                lacking = [label for label, key2 in (('Risk', 'risk'), ('R:R', 'rr'), ('Equity', 'equity')) if entry[key2] is None or (key2 == 'risk' and entry[key2] < 0)]
+                if lacking:
+                    unmatched.append(dict(shown, reason="Not in the app, and can't be added: no usable "
+                                          + ', '.join(lacking) + ' in this row.'))
+                elif key in seen_new:
+                    unmatched.append(dict(shown, reason='Appears twice in the sheet; only the first one is offered.'))
+                else:
+                    seen_new.add(key)
+                    when_text = entry_datetime_text(entry)
+                    quality = setup_from_notes(entry['notes'])
+                    new_trades.append({
+                        'ticker': entry['ticker'], 'when': when_text,
+                        'when_text': describe_excel_time(dict(entry, year=int(when_text[:4]))),
+                        'risk': entry['risk'], 'rr': entry['rr'], 'equity': entry['equity'],
+                        'pl': entry['risk'] * entry['rr'],
+                        'url': entry['url'], 'notes': entry['notes'], 'quality': quality,
+                        'sheet': name, 'row': entry['row'],
+                        'payload': json.dumps({
+                            'ticker': entry['ticker'], 'when': when_text, 'risk': entry['risk'],
+                            'rr': entry['rr'], 'equity': entry['equity'], 'url': entry['url'] or '',
+                        }, separators=(',', ':')),
+                    })
+
+    fills = []
+    for item in proposals.values():
+        entries = item['entries']
+        if len({e['url'] for e in entries}) > 1:
+            first = entries[0]
+            unmatched.append({
+                'sheet': first['sheet'], 'row': first['row'], 'ticker': first['ticker'],
+                'when': describe_excel_time(first), 'url': first['url'],
+                'reason': 'The sheet has different links for this one trade (rows '
+                + ', '.join(str(e['row']) for e in entries) + '), so it was left out.',
+            })
+        else:
+            fills.append({
+                'trade': item['trade'], 'url': entries[0]['url'],
+                'row': entries[0]['row'], 'sheet': entries[0]['sheet'],
+            })
+    fills.sort(key=lambda f: (f['trade'].position or 0, f['trade'].id))
+    new_trades.sort(key=lambda n: n['when'])
+    filled_ids = {f['trade'].id for f in fills}
+    still_missing = [t for t in trades if not has_screenshot(t) and t.id not in filled_ids]
+    return {
+        'sheets': sheet_notes,
+        'rows_read': rows_read,
+        'rows_without_link': rows_without_link,
+        'fills': fills,
+        'new_trades': new_trades[:MAX_NEW_TRADES],
+        'new_total': len(new_trades),
+        'unmatched': unmatched[:MAX_LISTED_ROWS],
+        'unmatched_total': len(unmatched),
+        'kept_different': kept_different,
+        'already_same': already_same,
+        'still_missing': still_missing,
+    }
+
+
+def answer_points():
+    """Points 'Yes' / 'No' are worth for the two questions a sheet can't answer."""
+    return {
+        'risk': get_rule_points('risk_under_half'),
+        'daily': get_rule_points('daily_dd'),
+    }
+
+
+@app.route('/import-screenshots', methods=['GET', 'POST'])
+def import_screenshots():
+    account = get_active_account()
+    trades = Trade.query.filter_by(account_id=account.id).all()
+    context = {
+        'stage': 'upload',
+        'account': account,
+        'total_trades': len(trades),
+        'missing_now': sum(1 for t in trades if not has_screenshot(t)),
+        'error': None,
+        'result': None,
+        'points': answer_points(),
+        'filled': request.args.get('filled', type=int),
+        'skipped': request.args.get('skipped', type=int),
+        'added': request.args.get('added', type=int),
+        'add_skipped': request.args.get('add_skipped', type=int),
+    }
+    if request.method == 'POST':
+        upload = request.files.get('file')
+        overrides = {
+            'risk': request.form.get('risk_col', ''),
+            'rr': request.form.get('rr_col', ''),
+            'equity': request.form.get('equity_col', ''),
+        }
+        try:
+            for label, letter in overrides.items():
+                if letter.strip() and parse_column_letter(letter) is None:
+                    raise UploadError(f'"{letter.strip()}" is not a column letter. Use letters like B or AA.')
+            if upload is None or not upload.filename:
+                raise UploadError('Please choose an Excel (.xlsx) or CSV file first.')
+            data = upload.read(MAX_UPLOAD_BYTES + 1)
+            if len(data) > MAX_UPLOAD_BYTES:
+                raise UploadError('That file is too large (the limit is 10 MB).')
+            context['result'] = build_import_preview(
+                account, read_sheets(upload.filename, data), overrides
+            )
+            context['stage'] = 'preview'
+        except UploadError as problem:
+            context['error'] = str(problem)
+    return render_template('import_screenshots.html', **context)
+
+
+def fill_screenshots(account):
+    """Step 1 of confirming: fill the ticked, still-empty screenshots."""
+    filled = skipped = 0
+    for raw_id in dict.fromkeys(request.form.getlist('apply')):
+        try:
+            trade = db.session.get(Trade, int(raw_id))
+        except ValueError:
+            trade = None
+        url = clean_url(request.form.get(f'url_{raw_id}'))
+        # Re-check everything: only this account, only still-empty screenshots,
+        # only real http(s) links. Existing screenshots are never overwritten.
+        if trade is None or trade.account_id != account.id or has_screenshot(trade) or not url:
+            skipped += 1
+            continue
+        trade.screenshot_url = url
+        filled += 1
+    return filled, skipped
+
+
+def add_new_trades(account):
+    """Step 2 of confirming: create the ticked rows as new trades."""
+    answers = {}
+    for field in ('answer_risk', 'answer_daily'):
+        choice = request.form.get(field, 'no')
+        answers[field] = choice if choice in ('yes', 'no', 'blank') else 'no'
+
+    ordered = [
+        (t, parse_entry_datetime(t.entry_datetime))
+        for t in Trade.query.filter_by(account_id=account.id)
+        .order_by(Trade.position.asc(), Trade.id.asc()).all()
+    ]
+    keys = {
+        (normalize_ticker(t.ticker), w.month, w.day, w.hour, w.minute)
+        for t, w in ordered if w
+    }
+    added = skipped = 0
+    additions = []
+    for raw_index in list(dict.fromkeys(request.form.getlist('add')))[:MAX_NEW_TRADES]:
+        try:
+            row = json.loads(request.form.get(f'row_{raw_index}', ''))
+            ticker = normalize_ticker(row['ticker'])
+            when = parse_entry_datetime(row['when'])
+            risk, ratio, equity = (parse_number(row[k]) for k in ('risk', 'rr', 'equity'))
+        except (ValueError, KeyError, TypeError):
+            skipped += 1
+            continue
+        key = (ticker, when.month, when.day, when.hour, when.minute) if when else None
+        if (
+            not TICKER_PATTERN.match(ticker) or when is None
+            or risk is None or risk < 0 or ratio is None or equity is None
+            or abs(risk) > 1e12 or abs(ratio) > 1e6 or abs(equity) > 1e12
+            or key in keys  # already in the app (e.g. this form was sent twice)
+        ):
+            skipped += 1
+            continue
+        quality = request.form.get(f'quality_{raw_index}')
+        if quality not in ('good', 'medium', 'bad'):
+            quality = 'medium'
+        risk_answer = None if answers['answer_risk'] == 'blank' else answers['answer_risk']
+        daily_answer = None if answers['answer_daily'] == 'blank' else answers['answer_daily']
+        scores = calculate_scores({
+            'setup_quality': quality, 'profit_taken': 'no', 'stop_loss_zero': 'no',
+            'risk_under_half': risk_answer, 'daily_risk': daily_answer,
+            'risk_reward_val': ratio, 'overtrading': 'no', 'revenge_trading': 'no',
+            'impatient_trading': 'no', 'fearful_trading': 'no',
+        })
+        trade = Trade(
+            account_id=account.id, position=0, setup_quality_str=quality, ticker=ticker,
+            entry_datetime=f'{when:%Y-%m-%dT%H:%M}', profit_taken_str='no', stop_loss_zero_str='no',
+            current_equity=equity, risk_str=format_number(risk), risk_reward_str=format_ratio(ratio),
+            risk_under_half_str=risk_answer, daily_risk_str=daily_answer,
+            overtrading_str='no', revenge_trading_str='no',
+            impatient_trading_str='no', fearful_trading_str='no',
+            screenshot_url=clean_url(row.get('url')),
+            setup_score=scores['setup_score'], profit_score=scores['profit_score'],
+            stop_loss_score=scores['stop_loss_score'], risk_score=scores['risk_score'],
+            daily_risk_score=scores['daily_risk_score'], psychology_score=scores['psychology_score'],
+            risk_reward_score=scores['risk_reward_score'], total_score=scores['total_score'],
+        )
+        db.session.add(trade)
+        keys.add(key)
+        additions.append((when, trade))
+        added += 1
+
+    # Put each new trade where it belongs in time, so the charts stay in order.
+    for when, trade in sorted(additions, key=lambda a: a[0]):
+        position = 0
+        for i, (other, other_when) in enumerate(ordered):
+            if other_when is not None and other_when <= when:
+                position = i + 1
+        ordered.insert(position, (trade, when))
+    if additions:
+        for number, (trade, _) in enumerate(ordered, start=1):
+            trade.position = number
+    return added, skipped
+
+
+@app.route('/import-screenshots/apply', methods=['POST'])
+def apply_import():
+    account = get_active_account()
+    filled, skipped = fill_screenshots(account)
+    added, add_skipped = add_new_trades(account)
+    db.session.commit()
+    return redirect(url_for(
+        'import_screenshots', filled=filled, skipped=skipped,
+        added=added, add_skipped=add_skipped,
+    ))
 
 
 # --- TRADING QUALITY APP ROUTES ---

@@ -39,7 +39,10 @@
 {% include '_account_bar.html' %}
 
     <div class="container py-3">
-        <h2 class="mb-4">Logged Trades History</h2>
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="m-0">Logged Trades History</h2>
+            <a href="/import-screenshots" class="btn btn-outline-primary btn-sm">Import from Excel</a>
+        </div>
 
         <div class="card shadow-sm p-4">
             <div class="table-responsive">
