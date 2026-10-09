@@ -51,6 +51,9 @@ class Trade(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     screenshot_url = db.Column(db.String(500), nullable=True)
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=True)
+    # When the trade was closed, e.g. 2026-10-09T13:30:05. Optional: the
+    # equity chart is drawn in exit-time order and falls back to the entry time.
+    exit_datetime = db.Column(db.String(50), nullable=True)
 
     @property
     def psychology_flags(self):
@@ -313,6 +316,11 @@ def ensure_schema():
         if 'account_id' not in columns:
             db.session.execute(
                 text('ALTER TABLE trade ADD COLUMN account_id INTEGER')
+            )
+        # Exit time: also doesn't change any score, so no re-score either.
+        if 'exit_datetime' not in columns:
+            db.session.execute(
+                text('ALTER TABLE trade ADD COLUMN exit_datetime VARCHAR(50)')
             )
         for name, ddl in [
             ('daily_risk_score', 'REAL DEFAULT 0.0'),
@@ -690,6 +698,44 @@ def parse_entry_datetime(value):
     return None
 
 
+def format_exit_datetime(when):
+    """2026-10-09T13:30:05 (seconds only when there are some)."""
+    if when.second:
+        return f'{when:%Y-%m-%dT%H:%M:%S}'
+    return f'{when:%Y-%m-%dT%H:%M}'
+
+
+def clean_exit_datetime(value):
+    """An exit time in the app's own text format, or None if blank/invalid."""
+    when = parse_entry_datetime(value)
+    return format_exit_datetime(when) if when else None
+
+
+EXIT_CELL_FORMATS = (
+    '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M',
+    '%d/%m/%Y %H:%M:%S.%f', '%d/%m/%Y %H:%M:%S', '%d/%m/%Y %H:%M',
+)
+
+
+def parse_exit_cell(value):
+    """A full date + time from an 'Exit time' cell, or None. A bare time or a
+    bare date can't say when the trade closed, so those are ignored."""
+    if isinstance(value, datetime):
+        if value.year < 1990:
+            return None  # a time-only value stored as a datetime
+        if value.hour == 0 and value.minute == 0 and value.second == 0:
+            return None  # a plain date
+        return value.replace(microsecond=0)
+    if isinstance(value, str):
+        text_value = value.strip().replace('T', ' ')
+        for fmt in EXIT_CELL_FORMATS:
+            try:
+                return datetime.strptime(text_value, fmt).replace(microsecond=0)
+            except ValueError:
+                continue
+    return None
+
+
 def has_screenshot(trade):
     return bool((trade.screenshot_url or '').strip())
 
@@ -768,6 +814,10 @@ HEADER_NAMES = {
     'rr': {'rr', 'riskreward', 'riskrewardratio', 'rratio', 'rmultiple'},
     'equity': {'equity', 'balance', 'accountbalance', 'currentequity', 'accountequity'},
     'notes': {'notes', 'note', 'comment', 'comments', 'description', 'remarks'},
+    'exit': {
+        'exittime', 'exitdatetime', 'timeexited', 'exitedtime', 'exitedat',
+        'closingtime', 'closetime', 'closedtime', 'closedat',
+    },
 }
 
 
@@ -835,7 +885,7 @@ def detect_extra_columns(rows, columns, overrides):
     then the data itself: Risk and R:R are the two columns whose product is the
     P/L column, Equity is the right-most remaining number column, Notes is the
     column with the longest text."""
-    found = {'risk': None, 'rr': None, 'equity': None, 'notes': None}
+    found = {'risk': None, 'rr': None, 'equity': None, 'notes': None, 'exit': None}
     used = {index for index in columns.values() if index is not None}
     for row in rows[:10]:
         for j, (value, _) in enumerate(row):
@@ -950,6 +1000,10 @@ def parse_sheet_rows(rows, columns):
             'rr': parse_number(cell('rr')[0]),
             'equity': parse_number(cell('equity')[0]),
             'notes': notes.strip() if isinstance(notes, str) else '',
+            'exit_text': (
+                format_exit_datetime(exit_when)
+                if (exit_when := parse_exit_cell(cell('exit')[0])) else None
+            ),
         })
     return entries
 
@@ -1003,6 +1057,7 @@ def build_import_preview(account, sheets, overrides):
             index.setdefault(key, []).append((trade, when))
 
     sheet_notes, unmatched, kept_different, proposals, new_trades = [], [], [], {}, []
+    exit_proposals, exit_already = {}, 0
     seen_new = set()
     rows_read = rows_without_link = already_same = 0
     for name, rows in sheets:
@@ -1038,6 +1093,14 @@ def build_import_preview(account, sheets, overrides):
                 unmatched.append(dict(shown, reason=f'{len(candidates)} trades match this row, so it is ambiguous.'))
             elif len(candidates) == 1:
                 trade = candidates[0]
+                if entry['exit_text']:
+                    if (trade.exit_datetime or '').strip():
+                        exit_already += 1
+                    else:
+                        exit_proposals.setdefault(trade.id, {
+                            'trade': trade, 'exit': entry['exit_text'],
+                            'row': entry['row'], 'sheet': name,
+                        })
                 if not entry['url']:
                     rows_without_link += 1
                 elif has_screenshot(trade):
@@ -1064,10 +1127,12 @@ def build_import_preview(account, sheets, overrides):
                         'risk': entry['risk'], 'rr': entry['rr'], 'equity': entry['equity'],
                         'pl': entry['risk'] * entry['rr'],
                         'url': entry['url'], 'notes': entry['notes'], 'quality': quality,
+                        'exit_text': (entry['exit_text'] or '').replace('T', ' '),
                         'sheet': name, 'row': entry['row'],
                         'payload': json.dumps({
                             'ticker': entry['ticker'], 'when': when_text, 'risk': entry['risk'],
                             'rr': entry['rr'], 'equity': entry['equity'], 'url': entry['url'] or '',
+                            'exit': entry['exit_text'] or '',
                         }, separators=(',', ':')),
                     })
 
@@ -1088,6 +1153,9 @@ def build_import_preview(account, sheets, overrides):
                 'row': entries[0]['row'], 'sheet': entries[0]['sheet'],
             })
     fills.sort(key=lambda f: (f['trade'].position or 0, f['trade'].id))
+    exit_fills = sorted(
+        exit_proposals.values(), key=lambda f: (f['trade'].position or 0, f['trade'].id)
+    )
     new_trades.sort(key=lambda n: n['when'])
     filled_ids = {f['trade'].id for f in fills}
     still_missing = [t for t in trades if not has_screenshot(t) and t.id not in filled_ids]
@@ -1096,6 +1164,8 @@ def build_import_preview(account, sheets, overrides):
         'rows_read': rows_read,
         'rows_without_link': rows_without_link,
         'fills': fills,
+        'exit_fills': exit_fills,
+        'exit_already': exit_already,
         'new_trades': new_trades[:MAX_NEW_TRADES],
         'new_total': len(new_trades),
         'unmatched': unmatched[:MAX_LISTED_ROWS],
@@ -1130,6 +1200,8 @@ def import_screenshots():
         'skipped': request.args.get('skipped', type=int),
         'added': request.args.get('added', type=int),
         'add_skipped': request.args.get('add_skipped', type=int),
+        'exits': request.args.get('exits', type=int),
+        'exit_skipped': request.args.get('exit_skipped', type=int),
     }
     if request.method == 'POST':
         upload = request.files.get('file')
@@ -1171,6 +1243,27 @@ def fill_screenshots(account):
             skipped += 1
             continue
         trade.screenshot_url = url
+        filled += 1
+    return filled, skipped
+
+
+def fill_exit_times(account):
+    """Fill the ticked exit times. Only this account's trades that have no exit
+    time yet are touched: a saved exit time is never overwritten."""
+    filled = skipped = 0
+    for raw_id in dict.fromkeys(request.form.getlist('apply_exit')):
+        try:
+            trade = db.session.get(Trade, int(raw_id))
+        except ValueError:
+            trade = None
+        exit_text = clean_exit_datetime(request.form.get(f'exit_{raw_id}'))
+        if (
+            trade is None or trade.account_id != account.id
+            or (trade.exit_datetime or '').strip() or not exit_text
+        ):
+            skipped += 1
+            continue
+        trade.exit_datetime = exit_text
         filled += 1
     return filled, skipped
 
@@ -1230,6 +1323,7 @@ def add_new_trades(account):
             overtrading_str='no', revenge_trading_str='no',
             impatient_trading_str='no', fearful_trading_str='no',
             screenshot_url=clean_url(row.get('url')),
+            exit_datetime=clean_exit_datetime(row.get('exit')),
             setup_score=scores['setup_score'], profit_score=scores['profit_score'],
             stop_loss_score=scores['stop_loss_score'], risk_score=scores['risk_score'],
             daily_risk_score=scores['daily_risk_score'], psychology_score=scores['psychology_score'],
@@ -1257,11 +1351,13 @@ def add_new_trades(account):
 def apply_import():
     account = get_active_account()
     filled, skipped = fill_screenshots(account)
+    exits, exit_skipped = fill_exit_times(account)
     added, add_skipped = add_new_trades(account)
     db.session.commit()
     return redirect(url_for(
         'import_screenshots', filled=filled, skipped=skipped,
         added=added, add_skipped=add_skipped,
+        exits=exits, exit_skipped=exit_skipped,
     ))
 
 
@@ -1318,6 +1414,7 @@ def edit_trade(id):
         trade.setup_quality_str = data.get('setup_quality')
         trade.ticker = data.get('ticker')
         trade.entry_datetime = data.get('entry_datetime')
+        trade.exit_datetime = clean_exit_datetime(data.get('exit_datetime'))
         trade.profit_taken_str = data.get('profit_taken')
         trade.stop_loss_zero_str = data.get('stop_loss_zero')
         trade.current_equity = float(data.get('current_equity', 0))
@@ -1366,6 +1463,7 @@ def manage_trades():
             setup_quality_str=data.get('setup_quality'),
             ticker=data.get('ticker'),
             entry_datetime=data.get('entry_datetime'),
+            exit_datetime=clean_exit_datetime(data.get('exit_datetime')),
             profit_taken_str=data.get('profit_taken'),
             stop_loss_zero_str=data.get('stop_loss_zero'),
             current_equity=float(data.get('current_equity', 0)),
@@ -1405,6 +1503,7 @@ def manage_trades():
             'id': t.id,
             'ticker': t.ticker,
             'entry_datetime': t.entry_datetime,
+            'exit_datetime': t.exit_datetime,
             'current_equity': t.current_equity,
             'risk_val': float(t.risk_str) if t.risk_str else 0.0,
             'risk_reward_str': (

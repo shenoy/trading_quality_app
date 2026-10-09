@@ -50,6 +50,11 @@
                         </div>
 
                         <div class="mb-3">
+                            <label class="form-label">3b) Exit Date &amp; Time <span class="text-muted small">(optional &ndash; the equity chart is drawn in exit-time order)</span></label>
+                            <input type="datetime-local" step="1" class="form-control" name="exit_datetime" value="{{ trade.exit_datetime or '' }}">
+                        </div>
+
+                        <div class="mb-3">
                             <label class="form-label">4) 1/3rd Profit Taken?</label>
                             <select class="form-select" name="profit_taken" required>
                                 <option value="yes" {% if trade.profit_taken_str == 'yes' %}selected{% endif %}>Yes</option>

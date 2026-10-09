@@ -52,7 +52,8 @@
                             <th>Order</th>
                             <th>ID</th>
                             <th>Ticker</th>
-                            <th>Date/Time</th>
+                            <th>Entry Date/Time</th>
+                            <th>Exit Date/Time</th>
                             <th>Setup</th>
                             <th>1/3 Profit</th>
                             <th>SL Zero</th>
@@ -81,6 +82,7 @@
                             <td>{{ trade.id }}</td>
                             <td><strong>{{ trade.ticker }}</strong></td>
                             <td>{{ trade.entry_datetime.replace('T', ' ') }}</td>
+                            <td>{% if trade.exit_datetime %}{{ trade.exit_datetime.replace('T', ' ') }}{% else %}-{% endif %}</td>
                             <td><span class="badge bg-secondary">{{ trade.setup_quality_str }}</span></td>
                             <td>{{ trade.profit_taken_str | capitalize }}</td>
                             <td>{{ trade.stop_loss_zero_str | capitalize }}</td>
@@ -114,7 +116,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="17" class="text-center text-muted py-4">No trades logged yet.</td>
+                            <td colspan="18" class="text-center text-muted py-4">No trades logged yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

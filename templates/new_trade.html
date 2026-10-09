@@ -53,6 +53,11 @@
                         </div>
 
                         <div class="mb-3">
+                            <label class="form-label">3b) Exit Date &amp; Time <span class="text-muted small">(optional &ndash; the equity chart is drawn in exit-time order)</span></label>
+                            <input type="datetime-local" step="1" class="form-control" id="exit_datetime">
+                        </div>
+
+                        <div class="mb-3">
                             <label class="form-label">4) 1/3rd Profit Taken?</label>
                             <select class="form-select" id="profit_taken" required>
                                 <option value="yes">Yes (Score: {{ "%g"|format(pts['profit_yes'][0]) }})</option>
@@ -154,6 +159,7 @@
                 setup_quality: document.getElementById('setup_quality').value,
                 ticker: document.getElementById('ticker').value,
                 entry_datetime: document.getElementById('entry_datetime').value,
+                exit_datetime: document.getElementById('exit_datetime').value,
                 profit_taken: document.getElementById('profit_taken').value,
                 stop_loss_zero: document.getElementById('stop_loss_zero').value,
                 current_equity: document.getElementById('current_equity').value,

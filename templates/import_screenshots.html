@@ -30,11 +30,13 @@
     </div>
 
     {% if filled is not none or added is not none %}
+    {% set skipped_total = (skipped or 0) + (add_skipped or 0) + (exit_skipped or 0) %}
     <div class="alert alert-success">
         {% if added %}Added <strong>{{ added }}</strong> new trade{{ '' if added == 1 else 's' }}.{% endif %}
         {% if filled %}Filled <strong>{{ filled }}</strong> screenshot link{{ '' if filled == 1 else 's' }}.{% endif %}
-        {% if not added and not filled %}Nothing was changed.{% endif %}
-        {% if skipped or add_skipped %}<div class="small mt-1">{{ (skipped or 0) + (add_skipped or 0) }} item{{ '' if ((skipped or 0) + (add_skipped or 0)) == 1 else 's' }} skipped (already had a screenshot, already in the app, or not valid).</div>{% endif %}
+        {% if exits %}Filled <strong>{{ exits }}</strong> exit time{{ '' if exits == 1 else 's' }}.{% endif %}
+        {% if not added and not filled and not exits %}Nothing was changed.{% endif %}
+        {% if skipped_total %}<div class="small mt-1">{{ skipped_total }} item{{ '' if skipped_total == 1 else 's' }} skipped (already had a screenshot or exit time, already in the app, or not valid).</div>{% endif %}
         <a href="/trades-list" class="alert-link small">View All Trades</a>
     </div>
     {% endif %}
@@ -94,7 +96,7 @@
         Sheet &ldquo;{{ sheet.name }}&rdquo;:
         {% if sheet.problem %}{{ sheet.problem }}
         {% else %}ticker = column {{ sheet.columns.ticker }}, date = {{ sheet.columns.date }}, time = {{ sheet.columns.time }},
-        {% if sheet.columns.link %}link = {{ sheet.columns.link }}{% else %}no screenshot-link column (nothing to fill){% endif %}{% if sheet.extra.risk %}, risk = {{ sheet.extra.risk }}{% endif %}{% if sheet.extra.rr %}, R:R = {{ sheet.extra.rr }}{% endif %}{% if sheet.extra.equity %}, equity = {{ sheet.extra.equity }}{% endif %}{% if sheet.extra.notes %}, notes = {{ sheet.extra.notes }}{% endif %}
+        {% if sheet.columns.link %}link = {{ sheet.columns.link }}{% else %}no screenshot-link column (nothing to fill){% endif %}{% if sheet.extra.risk %}, risk = {{ sheet.extra.risk }}{% endif %}{% if sheet.extra.rr %}, R:R = {{ sheet.extra.rr }}{% endif %}{% if sheet.extra.equity %}, equity = {{ sheet.extra.equity }}{% endif %}{% if sheet.extra.notes %}, notes = {{ sheet.extra.notes }}{% endif %}{% if sheet.extra.exit %}, exit time = {{ sheet.extra.exit }}{% else %}, no exit-time column (exit times won't be filled){% endif %}
         &mdash; {{ sheet.rows }} trade row{{ '' if sheet.rows == 1 else 's' }} read.
         {% if sheet.cant_add %}<span class="text-warning-emphasis">New trades can't be added from this sheet: no {{ sheet.cant_add | join(', ') }} column found. Enter the column letters on the upload page and try again.</span>{% endif %}
         {% endif %}
@@ -103,14 +105,52 @@
 
     <div class="d-flex flex-wrap gap-2 my-3">
         <span class="badge bg-success fs-6">{{ result.fills | length }} screenshots to fill</span>
+        <span class="badge bg-info text-dark fs-6">{{ result.exit_fills | length }} exit times to fill</span>
         <span class="badge bg-primary fs-6">{{ result.new_total }} new trade{{ '' if result.new_total == 1 else 's' }} to add</span>
         <span class="badge bg-secondary fs-6">{{ result.already_same + result.kept_different | length }} already have a screenshot</span>
         <span class="badge bg-warning text-dark fs-6">{{ result.unmatched_total }} rows can't be used</span>
         <span class="badge bg-danger fs-6">{{ result.still_missing | length }} trades will still have no screenshot</span>
     </div>
 
-    {% if result.fills or result.new_trades %}
+    {% if result.fills or result.exit_fills or result.new_trades %}
     <form method="POST" action="/import-screenshots/apply">
+
+        {% if result.exit_fills %}
+        <div class="card shadow-sm p-4 mb-4">
+            <h5 class="mb-1">Exit times that will be filled</h5>
+            <p class="small text-muted">These trades are already in the app but have no exit time. A saved exit time is never overwritten.</p>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th><input type="checkbox" class="form-check-input" checked aria-label="Select all"
+                                       onchange="document.querySelectorAll('.exit-check').forEach(c => c.checked = this.checked)"></th>
+                            <th>ID</th>
+                            <th>Ticker</th>
+                            <th>Entry</th>
+                            <th>Exit found in the sheet</th>
+                            <th>Source</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in result.exit_fills %}
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input exit-check" name="apply_exit" value="{{ f.trade.id }}" checked></td>
+                            <td>{{ f.trade.id }}</td>
+                            <td><strong>{{ f.trade.ticker }}</strong></td>
+                            <td class="text-nowrap">{{ f.trade.entry_datetime | replace('T', ' ') }}</td>
+                            <td class="text-nowrap">
+                                {{ f.exit | replace('T', ' ') }}
+                                <input type="hidden" name="exit_{{ f.trade.id }}" value="{{ f.exit }}">
+                            </td>
+                            <td class="text-muted small">{{ f.sheet }}, row {{ f.row }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
 
         {% if result.fills %}
         <div class="card shadow-sm p-4 mb-4">
@@ -182,6 +222,7 @@
                                        onchange="document.querySelectorAll('.add-check').forEach(c => c.checked = this.checked)"></th>
                             <th>Ticker</th>
                             <th>Entry</th>
+                            <th>Exit</th>
                             <th>Risk</th>
                             <th>R:R</th>
                             <th>P/L</th>
@@ -200,6 +241,7 @@
                             </td>
                             <td><strong>{{ n.ticker }}</strong></td>
                             <td class="text-nowrap">{{ n.when_text }}</td>
+                            <td class="text-nowrap">{% if n.exit_text %}{{ n.exit_text }}{% else %}&mdash;{% endif %}</td>
                             <td>${{ '{:,.2f}'.format(n.risk) }}</td>
                             <td>{{ '%.4g' | format(n.rr) }}</td>
                             <td class="fw-semibold {{ 'text-success' if n.pl > 0 else 'text-danger' if n.pl < 0 else '' }}">{{ '+' if n.pl > 0 else '-' if n.pl < 0 else '' }}${{ '{:,.2f}'.format(n.pl | abs) }}</td>
@@ -230,7 +272,7 @@
     {% else %}
     <div class="card shadow-sm p-4 mb-4">
         <h5 class="mb-2">Nothing to apply</h5>
-        <p class="mb-3">No screenshot can be filled and no new trade was found for {{ account.name }}.</p>
+        <p class="mb-3">No screenshot or exit time can be filled and no new trade was found for {{ account.name }}.</p>
         <div><a href="/import-screenshots" class="btn btn-outline-secondary">Try another file</a></div>
     </div>
     {% endif %}
