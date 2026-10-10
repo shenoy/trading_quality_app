@@ -38,13 +38,20 @@
 
 {% include '_account_bar.html' %}
 
-    <div class="container py-3">
+    <div class="container-fluid px-4 py-3">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2 class="m-0">Logged Trades History</h2>
-            <a href="/import-screenshots" class="btn btn-outline-primary btn-sm">Import from Excel</a>
+            <div class="d-flex align-items-center gap-2">
+                <div class="btn-group btn-group-sm" role="group" aria-label="Sort order">
+                    <a href="/trades-list" class="btn btn-outline-secondary {% if sort_mode == 'exit' %}active{% endif %}">Newest exit first</a>
+                    <a href="/trades-list?sort=position" class="btn btn-outline-secondary {% if sort_mode == 'position' %}active{% endif %}">Manual order</a>
+                </div>
+                <a href="/trades-list/export?sort={{ sort_mode }}" class="btn btn-success btn-sm">&#11015; Download Excel</a>
+                <a href="/import-screenshots" class="btn btn-outline-primary btn-sm">Import from Excel</a>
+            </div>
         </div>
 
-        <div class="card shadow-sm p-4">
+        <div class="card shadow-sm p-3">
             <div class="table-responsive">
                 <table class="table table-striped table-hover align-middle">
                     <thead class="table-dark">
@@ -76,8 +83,12 @@
                         {% set pl_val = rr_val * risk_val %}
                         <tr>
                             <td>
+                                {% if sort_mode == 'position' %}
                                 <a href="/trade/move/{{ trade.id }}/up" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Move Up">▲</a>
                                 <a href="/trade/move/{{ trade.id }}/down" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Move Down">▼</a>
+                                {% else %}
+                                <span class="text-muted small">{{ loop.index }}</span>
+                                {% endif %}
                             </td>
                             <td>{{ trade.id }}</td>
                             <td><strong>{{ trade.ticker }}</strong></td>

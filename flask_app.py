@@ -5,7 +5,7 @@ import json
 import math
 import re
 from datetime import date as date_type, datetime, time as time_type, timedelta
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_file, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 
@@ -1385,12 +1385,110 @@ def new_trade_page():
 
 @app.route('/trades-list')
 def trades_list():
+    sort_mode = 'position' if request.args.get('sort') == 'position' else 'exit'
+    return render_template(
+        'trades.html', trades=ordered_trades(sort_mode), sort_mode=sort_mode
+    )
+
+
+def ordered_trades(sort_mode):
+    """The active account's trades. Default ('exit'): most recently closed
+    first, a trade with no exit time placed by its entry time. 'position' is the
+    manual order (the one the move up/down arrows change)."""
     all_trades = (
         Trade.query.filter_by(account_id=get_active_account().id)
         .order_by(Trade.position.asc())
         .all()
     )
-    return render_template('trades.html', trades=all_trades)
+    if sort_mode == 'exit':
+        all_trades.sort(
+            key=lambda t: (
+                (t.exit_datetime or t.entry_datetime or '').replace(' ', 'T'),
+                t.position or 0,
+            ),
+            reverse=True,
+        )
+    return all_trades
+
+
+def excel_number(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+@app.route('/trades-list/export')
+def export_trades():
+    """Download the trades list (same order as on screen) as an .xlsx file."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    account = get_active_account()
+    sort_mode = 'position' if request.args.get('sort') == 'position' else 'exit'
+    trades = ordered_trades(sort_mode)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Trades'
+    headers = [
+        'ID', 'Ticker', 'Entry Date/Time', 'Exit Date/Time', 'Setup', '1/3 Profit',
+        'SL Zero', 'Risk ($)', 'R:R', 'Profit / Loss ($)', 'Risk < 0.5%',
+        'Daily DD < 1.5%', 'Psychology', 'Equity', 'Total Score', 'Chart',
+    ]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+
+    def put_text(row, col, value):
+        cell = ws.cell(row=row, column=col, value=value)
+        if isinstance(value, str) and value[:1] in ('=', '+', '-', '@'):
+            cell.data_type = 's'  # never let a ticker or link become a formula
+        return cell
+
+    for r, t in enumerate(trades, start=2):
+        risk = excel_number(t.risk_str)
+        rr = excel_number(t.risk_reward_str)
+        entry = parse_entry_datetime(t.entry_datetime)
+        exit_when = parse_entry_datetime(t.exit_datetime)
+        put_text(r, 1, t.id)
+        put_text(r, 2, t.ticker)
+        for col, when in ((3, entry), (4, exit_when)):
+            cell = ws.cell(row=r, column=col, value=when)
+            cell.number_format = 'yyyy-mm-dd hh:mm:ss'
+        put_text(r, 5, t.setup_quality_str)
+        put_text(r, 6, (t.profit_taken_str or '').capitalize())
+        put_text(r, 7, (t.stop_loss_zero_str or '').capitalize())
+        ws.cell(row=r, column=8, value=risk)
+        ws.cell(row=r, column=9, value=rr)
+        ws.cell(row=r, column=10, value=(risk or 0) * (rr or 0)).number_format = '0.00'
+        put_text(r, 11, (t.risk_under_half_str or '').capitalize())
+        put_text(r, 12, (t.daily_risk_str or '').capitalize())
+        put_text(r, 13, ', '.join(t.psychology_flags))
+        ws.cell(row=r, column=14, value=t.current_equity).number_format = '0.00'
+        ws.cell(row=r, column=15, value=t.total_score)
+        if t.screenshot_url:
+            cell = put_text(r, 16, t.screenshot_url)
+            if t.screenshot_url.lower().startswith(('http://', 'https://')):
+                cell.hyperlink = t.screenshot_url
+
+    widths = [7, 12, 20, 20, 10, 10, 9, 10, 8, 16, 12, 15, 22, 12, 12, 45]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = 'A2'
+    ws.auto_filter.ref = f'A1:{get_column_letter(len(headers))}{max(len(trades) + 1, 2)}'
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    safe_name = re.sub(r'[^A-Za-z0-9_-]+', '_', account.name or 'trades').strip('_') or 'trades'
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f'{safe_name}_trades_{date_type.today():%Y-%m-%d}.xlsx',
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
 
 
 @app.route('/trade/edit/<int:id>', methods=['GET', 'POST'])
@@ -1543,7 +1641,7 @@ def move_trade(id, direction):
         trade.position, adjacent.position = adjacent.position, trade.position
         db.session.commit()
 
-    return redirect(url_for('trades_list'))
+    return redirect(url_for('trades_list', sort='position'))
 
 
 # --- IBKR TRADES ROUTES ---

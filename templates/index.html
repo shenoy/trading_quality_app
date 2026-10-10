@@ -15,7 +15,18 @@
         }
         .chart-container.small { height: 220px; }
         .chart-container.medium { height: 350px; }
-        .chart-container.large { height: 520px; }
+        .chart-container.large { height: max(520px, 60vh); }
+
+        /* "Large" breaks the chart's card out of the centred page column so it
+           spans the full browser width. --page-width is set from JS (it excludes
+           the scrollbar, which plain 100vw would not). */
+        body { overflow-x: hidden; }
+        .card.chart-full {
+            width: var(--page-width, 100vw);
+            max-width: none;
+            margin-left: calc(50% - var(--page-width, 100vw) / 2);
+            border-radius: 0;
+        }
     </style>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='tracker.svg') }}">
 <style>
@@ -237,6 +248,12 @@
         let dailyRRChartInstance = null;
         let dailyEVChartInstance = null;
 
+        function updatePageWidthVar() {
+            document.documentElement.style.setProperty('--page-width', document.documentElement.clientWidth + 'px');
+        }
+        updatePageWidthVar();
+        window.addEventListener('resize', updatePageWidthVar);
+
         function resizeChart(wrapperId, size, event) {
             const wrapper = document.getElementById(wrapperId);
             const card = wrapper.closest('.card');
@@ -246,6 +263,7 @@
 
             wrapper.classList.remove('small', 'medium', 'large');
             wrapper.classList.add(size);
+            card.classList.toggle('chart-full', size === 'large');
 
             if (wrapperId === 'qualityWrapper' && qualityChartInstance) qualityChartInstance.resize();
             else if (wrapperId === 'riskWrapper' && riskChartInstance) riskChartInstance.resize();
