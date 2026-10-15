@@ -444,7 +444,10 @@ def account_summary(account):
     )
     start = account.starting_balance
     # With no trades yet the balance is still the starting balance.
-    latest = trades[-1].current_equity if trades else start
+    net_pl = sum(trade_profit_loss(t) for t in trades)
+    # Balance = starting balance + sum of every trade's P&L (risk x R:R), so it
+    # matches the dashboard chart instead of the last stored running total.
+    latest = start + net_pl if start is not None else (trades[-1].current_equity if trades else start)
     change = latest - start if latest is not None and start is not None else None
     change_pct = change / start * 100 if change is not None and start and start > 0 else None
     return {
@@ -453,7 +456,7 @@ def account_summary(account):
         'latest_equity': latest,
         'change': change,
         'change_pct': change_pct,
-        'net_pl': sum(trade_profit_loss(t) for t in trades),
+        'net_pl': net_pl,
         'avg_score': (
             sum(t.total_score for t in trades) / len(trades) if trades else None
         ),

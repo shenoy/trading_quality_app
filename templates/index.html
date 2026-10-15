@@ -317,16 +317,7 @@
                 document.getElementById('statDaysTraded').innerText = uniqueTradingDays.size;
             }
 
-            const labels = data.map((t, index) => `Trade #${index + 1}`);
-            const qualityScores = data.map(t => parseFloat(t.total_score) || 0);
-            const equities = data.map(t => parseFloat(t.current_equity) || 0);
-            const risks = data.map(t => parseFloat(t.risk_val) || 0);
-            const riskRewards = data.map(t => parseFloat(t.risk_reward_str) || 0);
-
-            const tickers = data.map(t => t.ticker);
-            const datetimes = data.map(t => t.entry_datetime ? t.entry_datetime.replace('T', ' ') : '');
-
-            // Equity chart: trades in the order they were CLOSED (exit time).
+            // All trade charts: trades in the order they were CLOSED (exit time).
             // A trade with no exit time yet falls back to its entry time, and
             // trades with identical times keep their list order.
             const sortKey = t => String(t.exit_datetime || t.entry_datetime || '').replace(' ', 'T');
@@ -337,6 +328,15 @@
                     return ka < kb ? -1 : ka > kb ? 1 : a.i - b.i;
                 })
                 .map(x => x.t);
+            const labels = byExit.map((t, index) => `Trade #${index + 1}`);
+            const qualityScores = byExit.map(t => parseFloat(t.total_score) || 0);
+            const equities = byExit.map(t => parseFloat(t.current_equity) || 0);
+            const risks = byExit.map(t => parseFloat(t.risk_val) || 0);
+            const riskRewards = byExit.map(t => parseFloat(t.risk_reward_str) || 0);
+
+            const tickers = byExit.map(t => t.ticker);
+            const datetimes = byExit.map(t => t.entry_datetime ? t.entry_datetime.replace('T', ' ') : '');
+
             const shortTime = s => String(s || '').replace('T', ' ').slice(5, 16);
             const exitLabels = byExit.map(t => t.exit_datetime
                 ? shortTime(t.exit_datetime)
@@ -625,9 +625,9 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    ...commonTooltipOptions,
+                    ...exitTooltipOptions,
                     scales: {
-                        x: { title: { display: true, text: 'Trade Sequence' } },
+                        x: { title: { display: true, text: 'Trade Sequence (by exit time)' } },
                         y: { beginAtZero: true, title: { display: true, text: 'Risk Amount ($)' } }
                     }
                 }
@@ -677,9 +677,9 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    ...commonTooltipOptions,
+                    ...exitTooltipOptions,
                     scales: {
-                        x: { title: { display: true, text: 'Trade Sequence' } },
+                        x: { title: { display: true, text: 'Trade Sequence (by exit time)' } },
                         y: { title: { display: true, text: 'Risk:Reward Ratio' } }
                     }
                 }
