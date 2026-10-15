@@ -278,6 +278,10 @@
             const response = await fetch('/api/trades');
             const data = await response.json();
 
+            // A trade belongs to the day it was CLOSED (falls back to entry day).
+            const dayOf = t => String(t.exit_datetime || t.entry_datetime || '').split(/[T ]/)[0];
+            const pnlOf = t => (parseFloat(t.risk_val) || 0) * (parseFloat(t.risk_reward_str) || 0);
+
             // Track unique trading days
             const uniqueTradingDays = new Set();
 
@@ -287,7 +291,7 @@
 
                 data.forEach(t => {
                     if (t.entry_datetime) {
-                        const dateStr = t.entry_datetime.split('T')[0];
+                        const dateStr = dayOf(t);
                         uniqueTradingDays.add(dateStr);
                     }
 
@@ -338,7 +342,13 @@
                 ? shortTime(t.exit_datetime)
                 : `${shortTime(t.entry_datetime)} (no exit time)`);
             const exitQualityScores = byExit.map(t => parseFloat(t.total_score) || 0);
-            const exitEquities = byExit.map(t => parseFloat(t.current_equity) || 0);
+            // Equity = running sum of per-trade P&L in exit order (not the stored
+            // current_equity, which is a running total in entry/import order).
+            let runningEquity = 0;
+            const exitEquities = byExit.map(t => {
+                runningEquity += pnlOf(t);
+                return parseFloat(runningEquity.toFixed(2));
+            });
 
             // 1. Calculate Cumulative Averages (Running Average)
             let runningRiskSum = 0;
@@ -373,7 +383,7 @@
             const dailyPLMap = {};
             data.forEach(t => {
                 if (!t.entry_datetime) return;
-                const dateStr = t.entry_datetime.split('T')[0]; 
+                const dateStr = dayOf(t); 
                 const risk = parseFloat(t.risk_val) || 0;
                 const rr = parseFloat(t.risk_reward_str) || 0;
                 const pl = risk * rr;
@@ -392,7 +402,7 @@
             const dailyTradesMap = {};
             data.forEach(t => {
                 if (!t.entry_datetime) return;
-                const dateStr = t.entry_datetime.split('T')[0];
+                const dateStr = dayOf(t);
                 if (!dailyTradesMap[dateStr]) {
                     dailyTradesMap[dateStr] = [];
                 }
@@ -454,11 +464,8 @@
 
             // 5. Calculate Daily % Change in Account Balance based on latest daily equity
             const dailyEquityMap = {};
-            data.forEach(t => {
-                if (!t.entry_datetime) return;
-                const dateStr = t.entry_datetime.split('T')[0];
-                const eq = parseFloat(t.current_equity) || 0;
-                dailyEquityMap[dateStr] = eq; // Captures closing/latest equity for that day
+            byExit.forEach((t, i) => {
+                dailyEquityMap[dayOf(t)] = exitEquities[i]; // equity after the day's last close
             });
 
             const equityDates = Object.keys(dailyEquityMap).sort();
