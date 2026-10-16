@@ -1,0 +1,22 @@
+{% set p = request.path %}
+<nav class="app-nav" aria-label="Main">
+    <div class="container app-nav__inner">
+        <a class="app-brand" href="/">
+            <img src="{{ url_for('static', filename='tracker.svg') }}" alt="" width="26" height="26">
+            Trading Tracker
+        </a>
+        <div class="app-links">
+            <a href="/" {% if p == '/' %}aria-current="page"{% endif %}>Dashboard</a>
+            <a href="/trades-list" {% if p.startswith('/trades-list') or p.startswith('/trade/') or p == '/new-trade' or p.startswith('/import-screenshots') %}aria-current="page"{% endif %}>All trades</a>
+            <a href="/ibkr" {% if p == '/ibkr' or p.startswith('/ibkr/') %}aria-current="page"{% endif %}>IBKR trades</a>
+            <a href="/ibkr-charts" {% if p.startswith('/ibkr-charts') %}aria-current="page"{% endif %}>IBKR charts</a>
+            <a href="/accounts" {% if p.startswith('/accounts') %}aria-current="page"{% endif %}>Accounts</a>
+            <a href="/settings" {% if p.startswith('/settings') %}aria-current="page"{% endif %}>Settings</a>
+        </div>
+        {% if p != '/new-trade' %}
+        <div class="app-nav__action">
+            <a href="/new-trade" class="btn btn-primary btn-sm">Log trade</a>
+        </div>
+        {% endif %}
+    </div>
+</nav>

@@ -5,54 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>All Trades List</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-    body.wallpaper-bg {
-        background-image: url("{{ url_for('static', filename='images/ocean.jpg') }}");
+    {% include '_assets.html' %}
+    <style>}");
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
         background-attachment: fixed;
         min-height: 100vh;
     }
-    body.wallpaper-bg .card {
-        background-color: rgba(255, 255, 255, 0.90);
-        backdrop-filter: blur(8px);
-    }
 </style>
 </head>
-<body class="wallpaper-bg">
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="/">Trading Tracker</a>
-            <div class="navbar-nav">
-                <a class="nav-link" href="/">Dashboard & Chart</a>
-                <a class="nav-link active" href="/trades-list">View All Trades</a>
-                <a class="nav-link" href="/ibkr">IBKR Trades</a>
-                <a class="nav-link" href="/ibkr-charts">IBKR Charts</a>
-                <a class="nav-link" href="/accounts">Accounts</a>
-                <a class="nav-link" href="/settings">Settings</a>
-            </div>
-        </div>
-    </nav>
+<body class="app">
+    {% include '_nav.html' %}
 
 {% include '_account_bar.html' %}
 
     <div class="container-fluid px-4 py-3">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2 class="m-0">Logged Trades History</h2>
+            <h1 class="m-0">All trades</h1>
             <div class="d-flex align-items-center gap-2">
                 <div class="btn-group btn-group-sm" role="group" aria-label="Sort order">
                     <a href="/trades-list" class="btn btn-outline-secondary {% if sort_mode == 'exit' %}active{% endif %}">Newest exit first</a>
                     <a href="/trades-list?sort=position" class="btn btn-outline-secondary {% if sort_mode == 'position' %}active{% endif %}">Manual order</a>
                 </div>
-                <a href="/trades-list/export?sort={{ sort_mode }}" class="btn btn-success btn-sm">&#11015; Download Excel</a>
+                <a href="/trades-list/export?sort={{ sort_mode }}" class="btn btn-outline-secondary btn-sm">Download Excel</a>
                 <a href="/import-screenshots" class="btn btn-outline-primary btn-sm">Import from Excel</a>
             </div>
         </div>
 
-        <div class="card shadow-sm p-3">
-            <div class="table-responsive">
+        <div class="card p-2">
+            <div class="table-scroll">
                 <table class="table table-striped table-hover align-middle">
                     <thead class="table-dark">
                         <tr>
@@ -72,7 +54,7 @@
                             <th>Psychology</th>
                             <th>Equity</th>
                             <th>Total Score</th>
-                            <th>Chart</th> <!-- Added column header -->
+                            <th>Chart</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -94,21 +76,21 @@
                             <td><strong>{{ trade.ticker }}</strong></td>
                             <td>{{ trade.entry_datetime.replace('T', ' ') }}</td>
                             <td>{% if trade.exit_datetime %}{{ trade.exit_datetime.replace('T', ' ') }}{% else %}-{% endif %}</td>
-                            <td><span class="badge bg-secondary">{{ trade.setup_quality_str }}</span></td>
+                            <td><span class="badge bg-secondary badge-q-{{ trade.setup_quality_str | lower }}">{{ trade.setup_quality_str | capitalize }}</span></td>
                             <td>{{ trade.profit_taken_str | capitalize }}</td>
                             <td>{{ trade.stop_loss_zero_str | capitalize }}</td>
                             <td>${{ trade.risk_str }}</td>
                             <td>{{ trade.risk_reward_str }}</td>
                             <td>
                                 <span class="fw-bold {% if pl_val >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                    {{ "+" if pl_val > 0 else "" }}${{ "%.2f"|format(pl_val) }}
+                                    {{ "+" if pl_val > 0 else "-" if pl_val < 0 else "" }}${{ "{:,.2f}".format(pl_val | abs) }}
                                 </span>
                             </td>
                             <td>{{ (trade.risk_under_half_str or "-") | capitalize }}</td>
                             <td>{{ (trade.daily_risk_str or "-") | capitalize }}</td>
                             <td>{{ trade.psychology_flags | join(", ") or "-" }}</td>
                             <td>${{ "%.2f"|format(trade.current_equity) }}</td>
-                            <td><span class="badge bg-success fs-6">{{ trade.total_score }}</span></td>
+                            <td><span class="badge bg-success">{{ trade.total_score }}</span></td>
                             <td>
                                 {% if trade.screenshot_url %}
                                     <a href="{{ trade.screenshot_url }}" target="_blank" class="btn btn-sm btn-outline-info py-0 px-2">View</a>

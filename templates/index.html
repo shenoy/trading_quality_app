@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trading Quality & Balance Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    {% include '_assets.html' %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ url_for('static', filename='js/chart-theme.js') }}"></script>
     <style>
         .chart-container {
             position: relative;
@@ -29,103 +31,77 @@
         }
     </style>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='tracker.svg') }}">
-<style>
-    body.wallpaper-bg {
-        background-image: url("{{ url_for('static', filename='images/ocean.jpg') }}");
+<style>}");
         background-size: cover;     
         background-position: center;     
         background-repeat: no-repeat;    
         background-attachment: fixed;    
         min-height: 100vh;
     }
-
-    body.wallpaper-bg .card {
-        background-color: rgba(255, 255, 255, 0.90);
-        backdrop-filter: blur(8px);
-    }
 </style>
 
 </head>
-<body class="wallpaper-bg">
-   <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-    <div class="container">
-        <a class="navbar-brand" href="/">Trading Tracker</a>
-        <div class="navbar-nav">
-            <a class="nav-link active" href="/">Dashboard & Charts</a>
-            <a class="nav-link" href="/trades-list">View All Trades</a>
-            <a class="nav-link" href="/ibkr">IBKR Trades</a>
-            <a class="nav-link" href="/ibkr-charts">IBKR Charts</a>
-            <a class="nav-link" href="/accounts">Accounts</a>
-            <a class="nav-link" href="/settings">Settings</a>
-        </div>
-    </div>
-    </nav>
+<body class="app">
+    {% include '_nav.html' %}
 
 {% include '_account_bar.html' %}
 
-    <div class="container py-3">
-        <!-- Header row with title and Log Trade button -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1 class="m-0">Trading Quality & Balance Dashboard</h1>
-            <a href="/new-trade" class="btn btn-primary btn-lg shadow-sm">➕ Log New Trade</a>
+    <div class="container pb-3">
+        <div class="mb-4">
+            <h1 class="m-0">Dashboard</h1>
+            <p class="page-sub">Quality, risk and balance across every logged trade.</p>
         </div>
 
-        <!-- Summary Cards Row 1 -->
-        <div class="row g-3 mb-3">
-            <div class="col-md-3">
-                <div class="card shadow-sm p-3 text-center">
-                    <h6 class="text-muted mb-1">Win Rate</h6>
-                    <h3 id="statWinRate" class="fw-bold mb-0 text-primary">0.00%</h3>
+        <section class="card overview mb-3" aria-label="Overall results">
+            <div class="overview-main">
+                <div class="stat-label">Total P&amp;L</div>
+                <div id="statTotalPL" class="hero-figure">$0.00</div>
+                <div class="hero-sub"><span id="statTradeCount">0</span> trades logged</div>
+            </div>
+            <div class="overview-stats">
+                <div class="stat">
+                    <div class="stat-label">Win rate</div>
+                    <div id="statWinRate" class="stat-value">0.00%</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Expected value per trade</div>
+                    <div id="statEV" class="stat-value">$0.00</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Days traded</div>
+                    <div id="statDaysTraded" class="stat-value">0</div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card shadow-sm p-3 text-center">
-                    <h6 class="text-muted mb-1">Expected Value (EV)</h6>
-                    <h3 id="statEV" class="fw-bold mb-0 text-success">$0.00</h3>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card shadow-sm p-3 text-center">
-                    <h6 class="text-muted mb-1">Days Traded</h6>
-                    <h3 id="statDaysTraded" class="fw-bold mb-0 text-dark">0</h3>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card shadow-sm p-3 text-center">
-                    <h6 class="text-muted mb-1">Win Rate Daily % Change</h6>
-                    <h3 id="statDailyWinRateChange" class="fw-bold mb-0 text-secondary">0.00%</h3>
-                </div>
-            </div>
-        </div>
+        </section>
 
-        <!-- Summary Cards Row 2 -->
-        <div class="row g-3 mb-4">
-            <div class="col">
-                <div class="card shadow-sm p-3 text-center">
-                    <h6 class="text-muted mb-1">Latest R:R Daily % Change</h6>
-                    <h3 id="statDailyRRChange" class="fw-bold mb-0 text-secondary">0.00%</h3>
+        <section class="card mb-4" aria-label="Latest trading day">
+            <div class="day-strip-head">
+                <h2 class="card-title m-0">Latest trading day</h2>
+                <span id="latestDayLabel" class="text-muted small"></span>
+            </div>
+            <div class="stat-row">
+                <div class="stat">
+                    <div class="stat-label">P&amp;L</div>
+                    <div id="statDailyPL" class="stat-value">$0.00</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Balance change</div>
+                    <div id="statDailyBalanceChange" class="stat-value">0.00%</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Win rate change</div>
+                    <div id="statDailyWinRateChange" class="stat-value">0.00%</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">R:R change</div>
+                    <div id="statDailyRRChange" class="stat-value">0.00%</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">EV change</div>
+                    <div id="statDailyEVChange" class="stat-value">0.00%</div>
                 </div>
             </div>
-            <div class="col">
-                <div class="card shadow-sm p-3 text-center">
-                    <h6 class="text-muted mb-1">Latest EV Daily % Change</h6>
-                    <h3 id="statDailyEVChange" class="fw-bold mb-0 text-secondary">0.00%</h3>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card shadow-sm p-3 text-center">
-                    <h6 class="text-muted mb-1">Daily % Change in Balance</h6>
-                    <h3 id="statDailyBalanceChange" class="fw-bold mb-0 text-secondary">0.00%</h3>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card shadow-sm p-3 text-center">
-                    <h6 class="text-muted mb-1">Daily P&L</h6>
-                    <h3 id="statDailyPL" class="fw-bold mb-0 text-secondary">$0.00</h3>
-                </div>
-            </div>
-        </div>
+        </section>
 
         <!-- Charts Column -->
         <div class="row g-4">
@@ -248,6 +224,12 @@
         let dailyRRChartInstance = null;
         let dailyEVChartInstance = null;
 
+        // -$1,234.56 / +$1,234.56 (sign first, thousands separators)
+        function fmtMoney(v, withPlus) {
+            const abs = Math.abs(v).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            return `${v < 0 ? '-' : (withPlus && v > 0 ? '+' : '')}$${abs}`;
+        }
+
         function updatePageWidthVar() {
             document.documentElement.style.setProperty('--page-width', document.documentElement.clientWidth + 'px');
         }
@@ -311,10 +293,15 @@
                 document.getElementById('statWinRate').innerText = `${winRate.toFixed(2)}%`;
                 
                 const evElement = document.getElementById('statEV');
-                evElement.innerText = `$${expectedValue.toFixed(2)}`;
-                evElement.className = `fw-bold mb-0 ${expectedValue >= 0 ? 'text-success' : 'text-danger'}`;
+                evElement.innerText = fmtMoney(expectedValue);
+                evElement.className = `stat-value ${expectedValue >= 0 ? 'text-success' : 'text-danger'}`;
 
                 document.getElementById('statDaysTraded').innerText = uniqueTradingDays.size;
+
+                const totalEl = document.getElementById('statTotalPL');
+                totalEl.innerText = fmtMoney(totalPL, true);
+                totalEl.className = `hero-figure ${totalPL >= 0 ? 'text-success' : 'text-danger'}`;
+                document.getElementById('statTradeCount').innerText = data.length;
             }
 
             // All trade charts: trades in the order they were CLOSED (exit time).
@@ -396,7 +383,7 @@
 
             const sortedDates = Object.keys(dailyPLMap).sort();
             const dailyPLValues = sortedDates.map(date => parseFloat(dailyPLMap[date].toFixed(2)));
-            const dailyColors = dailyPLValues.map(val => val >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)');
+            const dailyColors = dailyPLValues.map(val => val >= 0 ? TT.gainBar : TT.lossBar);
 
             // 4. Calculate Daily Metrics for Win Rate, R:R, and EV to derive Daily % Changes
             const dailyTradesMap = {};
@@ -479,17 +466,17 @@
                 const wrChange = dailyWinRatePctChanges[latestIdx];
                 const wrEl = document.getElementById('statDailyWinRateChange');
                 wrEl.innerText = `${wrChange >= 0 ? '+' : ''}${wrChange.toFixed(2)}%`;
-                wrEl.className = `fw-bold mb-0 ${wrChange >= 0 ? 'text-success' : 'text-danger'}`;
+                wrEl.className = `stat-value ${wrChange >= 0 ? 'text-success' : 'text-danger'}`;
 
                 const rrChange = dailyRRPctChanges[latestIdx];
                 const rrEl = document.getElementById('statDailyRRChange');
                 rrEl.innerText = `${rrChange >= 0 ? '+' : ''}${rrChange.toFixed(2)}%`;
-                rrEl.className = `fw-bold mb-0 ${rrChange >= 0 ? 'text-success' : 'text-danger'}`;
+                rrEl.className = `stat-value ${rrChange >= 0 ? 'text-success' : 'text-danger'}`;
 
                 const evChange = dailyEVPctChanges[latestIdx];
                 const evEl = document.getElementById('statDailyEVChange');
                 evEl.innerText = `${evChange >= 0 ? '+' : ''}${evChange.toFixed(2)}%`;
-                evEl.className = `fw-bold mb-0 ${evChange >= 0 ? 'text-success' : 'text-danger'}`;
+                evEl.className = `stat-value ${evChange >= 0 ? 'text-success' : 'text-danger'}`;
             }
 
             if (equityDates.length > 0) {
@@ -497,15 +484,17 @@
                 const balanceChange = dailyBalancePctChanges[latestEqIdx];
                 const balanceEl = document.getElementById('statDailyBalanceChange');
                 balanceEl.innerText = `${balanceChange >= 0 ? '+' : ''}${balanceChange.toFixed(2)}%`;
-                balanceEl.className = `fw-bold mb-0 ${balanceChange >= 0 ? 'text-success' : 'text-danger'}`;
+                balanceEl.className = `stat-value ${balanceChange >= 0 ? 'text-success' : 'text-danger'}`;
             }
 
             if (sortedDates.length > 0) {
                 const latestDate = sortedDates[sortedDates.length - 1];
                 const latestPL = dailyPLMap[latestDate];
+                document.getElementById('latestDayLabel').innerText =
+                    new Date(latestDate + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
                 const plEl = document.getElementById('statDailyPL');
-                plEl.innerText = `${latestPL >= 0 ? '+' : ''}$${latestPL.toFixed(2)}`;
-                plEl.className = `fw-bold mb-0 ${latestPL >= 0 ? 'text-success' : 'text-danger'}`;
+                plEl.innerText = fmtMoney(latestPL, true);
+                plEl.className = `stat-value ${latestPL >= 0 ? 'text-success' : 'text-danger'}`;
             }
 
             const commonTooltipOptions = {
@@ -552,8 +541,8 @@
                         order: 2,
                         label: 'Quality Score',
                         data: exitQualityScores,
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                        borderColor: TT.ink3,
+                        backgroundColor: TT.slateBar,
                         yAxisID: 'y',
                         tension: 0.1
                     },
@@ -562,8 +551,8 @@
                         order: 1,
                         label: 'Equity Balance ($)',
                         data: exitEquities,
-                        borderColor: 'rgba(255, 99, 132, 1)',
-                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        borderColor: TT.accent,
+                        backgroundColor: TT.accentFill,
                         yAxisID: 'y1',
                         tension: 0.1
                     }
@@ -594,15 +583,15 @@
                             type: 'bar',
                             label: 'Risk Amount ($)',
                             data: risks,
-                            backgroundColor: 'rgba(255, 159, 64, 0.7)',
+                            backgroundColor: TT.amberBar,
                             order: 3
                         },
                         {
                             type: 'line',
                             label: 'Cumulative Avg Risk ($)',
                             data: cumulativeRiskData,
-                            borderColor: 'rgba(255, 99, 132, 1)',
-                            backgroundColor: 'rgba(255, 99, 132, 0)',
+                            borderColor: TT.ink2,
+                            backgroundColor: 'transparent',
                             borderWidth: 2,
                             borderDash: [5, 5],
                             pointRadius: 2,
@@ -613,8 +602,8 @@
                             type: 'line',
                             label: '10-Trade Moving Avg Risk ($)',
                             data: movingAvgRiskData,
-                            borderColor: 'rgba(54, 162, 235, 1)',
-                            backgroundColor: 'rgba(54, 162, 235, 0)',
+                            borderColor: TT.accent,
+                            backgroundColor: 'transparent',
                             borderWidth: 2,
                             pointRadius: 2,
                             order: 1,
@@ -646,15 +635,15 @@
                             type: 'bar',
                             label: 'Risk:Reward (R:R)',
                             data: riskRewards,
-                            backgroundColor: 'rgba(153, 102, 255, 0.7)',
+                            backgroundColor: TT.indigoBar,
                             order: 3
                         },
                         {
                             type: 'line',
                             label: 'Cumulative Avg R:R',
                             data: cumulativeRRData,
-                            borderColor: 'rgba(255, 99, 132, 1)',
-                            backgroundColor: 'rgba(255, 99, 132, 0)',
+                            borderColor: TT.ink2,
+                            backgroundColor: 'transparent',
                             borderWidth: 2,
                             borderDash: [5, 5],
                             pointRadius: 2,
@@ -665,8 +654,8 @@
                             type: 'line',
                             label: '10-Trade Moving Avg R:R',
                             data: movingAvgRRData,
-                            borderColor: 'rgba(54, 162, 235, 1)',
-                            backgroundColor: 'rgba(54, 162, 235, 0)',
+                            borderColor: TT.accent,
+                            backgroundColor: 'transparent',
                             borderWidth: 2,
                             pointRadius: 2,
                             order: 1,
@@ -730,7 +719,7 @@
                     datasets: [{
                         label: 'Daily % Change in Win Rate (%)',
                         data: dailyWinRatePctChanges,
-                        backgroundColor: dailyWinRatePctChanges.map(v => v >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
+                        backgroundColor: dailyWinRatePctChanges.map(v => v >= 0 ? TT.gainBar : TT.lossBar),
                         borderWidth: 1
                     }]
                 },
@@ -755,7 +744,7 @@
                     datasets: [{
                         label: 'Daily % Change in R:R (%)',
                         data: dailyRRPctChanges,
-                        backgroundColor: dailyRRPctChanges.map(v => v >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
+                        backgroundColor: dailyRRPctChanges.map(v => v >= 0 ? TT.gainBar : TT.lossBar),
                         borderWidth: 1
                     }]
                 },
@@ -780,7 +769,7 @@
                     datasets: [{
                         label: 'Daily % Change in EV (%)',
                         data: dailyEVPctChanges,
-                        backgroundColor: dailyEVPctChanges.map(v => v >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
+                        backgroundColor: dailyEVPctChanges.map(v => v >= 0 ? TT.gainBar : TT.lossBar),
                         borderWidth: 1
                     }]
                 },
