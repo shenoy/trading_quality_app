@@ -739,6 +739,35 @@ def parse_exit_cell(value):
     return None
 
 
+def exit_from_cells(exit_cell, exit_date_cell, entry_date, entry_time):
+    """The exit as a datetime. Accepts either one cell holding date + time, or
+    a time-only cell plus a separate exit-date cell (or, with no date column,
+    the entry date, rolling to the next day if the time is earlier)."""
+    full = parse_exit_cell(exit_cell)
+    if full:
+        return full
+    exit_time = parse_time_cell(exit_cell)
+    if not exit_time:
+        return None
+    entry_text = entry_datetime_text({
+        'year': entry_date[0], 'month': entry_date[1], 'day': entry_date[2],
+        'hour': entry_time[0], 'minute': entry_time[1],
+    })
+    entry_when = datetime.strptime(entry_text, '%Y-%m-%dT%H:%M')
+    exit_date = parse_date_cell(exit_date_cell) if exit_date_cell is not None else None
+    try:
+        if exit_date:
+            year = exit_date[0] or entry_when.year
+            when = datetime(year, exit_date[1], exit_date[2], exit_time[0], exit_time[1])
+            if exit_date[0] is None and when < entry_when - timedelta(days=1):
+                when = when.replace(year=year + 1)  # e.g. entered in Dec, exited in Jan
+            return when
+        when = entry_when.replace(hour=exit_time[0], minute=exit_time[1])
+        return when + timedelta(days=1) if when < entry_when else when
+    except ValueError:
+        return None
+
+
 def has_screenshot(trade):
     return bool((trade.screenshot_url or '').strip())
 
@@ -821,6 +850,11 @@ HEADER_NAMES = {
         'exittime', 'exitdatetime', 'timeexited', 'exitedtime', 'exitedat',
         'closingtime', 'closetime', 'closedtime', 'closedat',
     },
+    # a separate exit *date* column, used together with a time-only exit column
+    'exit_date': {
+        'exitdate', 'dateexit', 'dateexited', 'exiteddate', 'closedate',
+        'dateclosed', 'closingdate', 'closeddate',
+    },
 }
 
 
@@ -888,7 +922,7 @@ def detect_extra_columns(rows, columns, overrides):
     then the data itself: Risk and R:R are the two columns whose product is the
     P/L column, Equity is the right-most remaining number column, Notes is the
     column with the longest text."""
-    found = {'risk': None, 'rr': None, 'equity': None, 'notes': None, 'exit': None}
+    found = {'risk': None, 'rr': None, 'equity': None, 'notes': None, 'exit': None, 'exit_date': None}
     used = {index for index in columns.values() if index is not None}
     for row in rows[:10]:
         for j, (value, _) in enumerate(row):
@@ -990,6 +1024,10 @@ def parse_sheet_rows(rows, columns):
             continue  # header, blank or unrelated row
         link_value, link_target = cell('link')
         notes = cell('notes')[0]
+        exit_when = exit_from_cells(
+            cell('exit')[0], cell('exit_date')[0] if columns.get('exit_date') is not None else None,
+            date_parts, time_parts,
+        )
         entries.append({
             'row': number,
             'ticker': normalize_ticker(ticker),
@@ -1003,10 +1041,7 @@ def parse_sheet_rows(rows, columns):
             'rr': parse_number(cell('rr')[0]),
             'equity': parse_number(cell('equity')[0]),
             'notes': notes.strip() if isinstance(notes, str) else '',
-            'exit_text': (
-                format_exit_datetime(exit_when)
-                if (exit_when := parse_exit_cell(cell('exit')[0])) else None
-            ),
+            'exit_text': format_exit_datetime(exit_when) if exit_when else None,
         })
     return entries
 
