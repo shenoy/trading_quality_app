@@ -113,7 +113,7 @@ h5 { font-size: 1.0625rem; font-weight: 600; }
     height: 2px;
     background: var(--tt-accent);
 }
-.app-nav__action { display: flex; align-items: center; }
+.app-nav__action { display: flex; align-items: center; gap: 0.5rem; }
 
 /* ---------- Cards ---------- */
 .card {

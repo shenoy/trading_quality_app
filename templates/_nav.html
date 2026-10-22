@@ -13,9 +13,12 @@
             <a href="/accounts" {% if p.startswith('/accounts') %}aria-current="page"{% endif %}>Accounts</a>
             <a href="/settings" {% if p.startswith('/settings') %}aria-current="page"{% endif %}>Settings</a>
         </div>
-        {% if p != '/new-trade' %}
+        {% if True %}
         <div class="app-nav__action">
-            <a href="/new-trade" class="btn btn-primary btn-sm">Log trade</a>
+            {% if not p.startswith('/import-screenshots') %}
+            <a href="/import-screenshots" class="btn btn-outline-secondary btn-sm">Import from Excel</a>
+            {% endif %}
+            {% if p != '/new-trade' %}<a href="/new-trade" class="btn btn-primary btn-sm">Log trade</a>{% endif %}
         </div>
         {% endif %}
     </div>

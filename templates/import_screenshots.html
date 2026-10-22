@@ -85,7 +85,7 @@
         Sheet &ldquo;{{ sheet.name }}&rdquo;:
         {% if sheet.problem %}{{ sheet.problem }}
         {% else %}ticker = column {{ sheet.columns.ticker }}, date = {{ sheet.columns.date }}, time = {{ sheet.columns.time }},
-        {% if sheet.columns.link %}link = {{ sheet.columns.link }}{% else %}no screenshot-link column (nothing to fill){% endif %}{% if sheet.extra.risk %}, risk = {{ sheet.extra.risk }}{% endif %}{% if sheet.extra.rr %}, R:R = {{ sheet.extra.rr }}{% endif %}{% if sheet.extra.equity %}, equity = {{ sheet.extra.equity }}{% endif %}{% if sheet.extra.notes %}, notes = {{ sheet.extra.notes }}{% endif %}{% if sheet.extra.exit %}, exit time = {{ sheet.extra.exit }}{% else %}, no exit-time column (exit times won't be filled){% endif %}
+        {% if sheet.columns.link %}link = {{ sheet.columns.link }}{% else %}no screenshot-link column (nothing to fill){% endif %}{% if sheet.extra.risk %}, risk = {{ sheet.extra.risk }}{% endif %}{% if sheet.extra.rr %}, R:R = {{ sheet.extra.rr }}{% endif %}{% if sheet.extra.equity %}, equity = {{ sheet.extra.equity }}{% endif %}{% if sheet.extra.notes %}, notes = {{ sheet.extra.notes }}{% endif %}{% if sheet.extra.exit %}, exit time = {{ sheet.extra.exit }}{% if sheet.extra.exit_date %} + exit date = {{ sheet.extra.exit_date }}{% endif %}{% else %}, no exit-time column (exit times won't be filled){% endif %}
         &mdash; {{ sheet.rows }} trade row{{ '' if sheet.rows == 1 else 's' }} read.
         {% if sheet.cant_add %}<span class="text-warning-emphasis">New trades can't be added from this sheet: no {{ sheet.cant_add | join(', ') }} column found. Enter the column letters on the upload page and try again.</span>{% endif %}
         {% endif %}
