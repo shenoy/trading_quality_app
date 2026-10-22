@@ -38,8 +38,19 @@
         <div class="col-lg-6">
             <div class="card shadow-sm p-4">
                 <h5 class="mb-3">Upload your sheet</h5>
-                <form method="POST" enctype="multipart/form-data">
-                    <div class="mb-3">
+                <form method="POST" enctype="multipart/form-data" id="importForm">
+                    <div id="fsPicker" class="mb-3" hidden>
+                        <div id="lastFileRow" class="d-flex align-items-center justify-content-between gap-3 p-3 mb-2 rounded border" hidden>
+                            <div class="small min-w-0">
+                                <div class="text-muted">Last file used</div>
+                                <div class="fw-semibold text-break" id="lastFileName"></div>
+                            </div>
+                            <button type="button" class="btn btn-primary btn-sm flex-shrink-0" id="reimportBtn">Import latest version</button>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary w-100" id="chooseBtn">Choose file&hellip;</button>
+                        <div class="small mt-2" id="pickedName" aria-live="polite"></div>
+                    </div>
+                    <div class="mb-3" id="nativePicker">
                         <input type="file" class="form-control" name="file" accept=".xlsx,.xlsm,.csv" required>
                     </div>
                     <details class="mb-3">
@@ -335,5 +346,101 @@
     {% endif %}
 </div>
 
+<script>
+/* Remembers the last spreadsheet so it is the default next time. Browsers never reveal
+   file paths to web pages, so instead the page keeps a handle to the file (Chrome/Edge
+   "File System Access"): the file dialog opens where it was last used, and
+   "Import latest version" re-reads that same file straight from disk. Other browsers
+   keep the plain upload box. */
+(function () {
+    const form = document.getElementById('importForm');
+    if (!form || !('showOpenFilePicker' in window)) return;
+    const input = form.querySelector('input[type=file]');
+    const picker = document.getElementById('fsPicker');
+    const lastRow = document.getElementById('lastFileRow');
+    const lastName = document.getElementById('lastFileName');
+    const note = document.getElementById('pickedName');
+    const chooseBtn = document.getElementById('chooseBtn');
+    const reimportBtn = document.getElementById('reimportBtn');
+    let lastHandle = null;
+
+    picker.hidden = false;
+    document.getElementById('nativePicker').hidden = true;
+    input.required = false;
+
+    const db = () => new Promise((resolve, reject) => {
+        const req = indexedDB.open('tt-import', 1);
+        req.onupgradeneeded = () => req.result.createObjectStore('handles');
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+    async function remember(handle) {
+        try {
+            const d = await db();
+            await new Promise((res, rej) => {
+                const tx = d.transaction('handles', 'readwrite');
+                tx.objectStore('handles').put(handle, 'last');
+                tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+            });
+        } catch (e) { /* private mode etc.: still works, just not remembered */ }
+    }
+    async function recall() {
+        try {
+            const d = await db();
+            return await new Promise((res, rej) => {
+                const req = d.transaction('handles').objectStore('handles').get('last');
+                req.onsuccess = () => res(req.result || null); req.onerror = () => rej(req.error);
+            });
+        } catch (e) { return null; }
+    }
+    function useFile(file) {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+    }
+    function showLast(handle) {
+        lastHandle = handle;
+        lastName.textContent = handle.name;
+        lastRow.hidden = false;
+        chooseBtn.textContent = 'Choose a different file\u2026';
+    }
+    const say = (msg, bad) => { note.textContent = msg; note.className = 'small mt-2 ' + (bad ? 'text-danger' : 'text-muted'); };
+
+    chooseBtn.addEventListener('click', async () => {
+        try {
+            const opts = {
+                id: 'trade-import',   // the dialog reopens in the folder used last time
+                types: [{ description: 'Excel or CSV', accept: {
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx', '.xlsm'],
+                    'text/csv': ['.csv'] } }],
+            };
+            if (lastHandle) opts.startIn = lastHandle;
+            const [handle] = await window.showOpenFilePicker(opts);
+            useFile(await handle.getFile());
+            await remember(handle);
+            showLast(handle);
+            say('Selected ' + handle.name + '. Press "Upload and preview" to continue.');
+        } catch (e) {
+            if (e.name !== 'AbortError') say('Could not open that file: ' + e.message, true);
+        }
+    });
+
+    reimportBtn.addEventListener('click', async () => {
+        try {
+            if (await lastHandle.queryPermission({ mode: 'read' }) !== 'granted' &&
+                await lastHandle.requestPermission({ mode: 'read' }) !== 'granted') {
+                say('Permission to read the file was not given.', true);
+                return;
+            }
+            useFile(await lastHandle.getFile());   // always the current contents on disk
+            form.requestSubmit();
+        } catch (e) {
+            say('Could not open ' + lastHandle.name + ' (moved, renamed or deleted?). Choose it again.', true);
+        }
+    });
+
+    recall().then(h => { if (h) showLast(h); });
+})();
+</script>
 </body>
 </html>
