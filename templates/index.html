@@ -47,16 +47,24 @@
 {% include '_account_bar.html' %}
 
     <div class="container pb-3">
-        <div class="mb-4">
-            <h1 class="m-0">Dashboard</h1>
-            <p class="page-sub">Quality, risk and balance across every logged trade.</p>
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+            <div>
+                <h1 class="m-0">Dashboard</h1>
+                <p class="page-sub">Quality, risk and balance across every logged trade.</p>
+            </div>
+            <div class="btn-group" id="rangeSwitch" role="group" aria-label="Time range for all charts">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-range="day">Day</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-range="week">Week</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-range="month">Month</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm active" data-range="all">All</button>
+            </div>
         </div>
 
         <section class="card overview mb-3" aria-label="Overall results">
             <div class="overview-main">
                 <div class="stat-label">Total P&amp;L</div>
                 <div id="statTotalPL" class="hero-figure">$0.00</div>
-                <div class="hero-sub"><span id="statTradeCount">0</span> trades logged</div>
+                <div class="hero-sub"><span id="statTradeCount">0</span> trades <span id="rangeLabel">logged</span></div>
             </div>
             <div class="overview-stats">
                 <div class="stat">
@@ -256,14 +264,113 @@
             else if (wrapperId === 'dailyEVWrapper' && dailyEVChartInstance) dailyEVChartInstance.resize();
         }
 
+        // A trade belongs to the day it was CLOSED (falls back to entry day).
+        const dayOf = t => String(t.exit_datetime || t.entry_datetime || '').split(/[T ]/)[0];
+        const pnlOf = t => (parseFloat(t.risk_val) || 0) * (parseFloat(t.risk_reward_str) || 0);
+
+        let allTrades = [];
+        let currentRange = 'all';
+        try { currentRange = localStorage.getItem('tt.range') || 'all'; } catch (e) {}
+        if (!['day', 'week', 'month', 'all'].includes(currentRange)) currentRange = 'all';
+
+        const dateFromKey = key => new Date(key + 'T00:00:00Z');
+        const keyFromDate = d => d.toISOString().slice(0, 10);
+        const longDate = key => dateFromKey(key).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+        // Day / Week / Month are anchored on the most recent trading day:
+        // that day, its Monday-to-Sunday week, or its calendar month.
+        function applyRange(trades, range) {
+            if (range === 'all' || trades.length === 0) return { data: trades, label: 'logged' };
+            const days = trades.map(dayOf).filter(Boolean).sort();
+            const latest = days[days.length - 1];
+            if (range === 'day') {
+                return { data: trades.filter(t => dayOf(t) === latest), label: `on ${longDate(latest)}` };
+            }
+            if (range === 'week') {
+                const d = dateFromKey(latest);
+                d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));   // back to Monday
+                const monday = keyFromDate(d);
+                return { data: trades.filter(t => dayOf(t) >= monday), label: `in the week of ${longDate(monday)}` };
+            }
+            const month = latest.slice(0, 7);
+            const name = dateFromKey(latest).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+            return { data: trades.filter(t => dayOf(t).slice(0, 7) === month), label: `in ${name}` };
+        }
+
+        function syncRangeButtons() {
+            document.querySelectorAll('#rangeSwitch .btn').forEach(b =>
+                b.classList.toggle('active', b.dataset.range === currentRange));
+        }
+
+        document.getElementById('rangeSwitch').addEventListener('click', e => {
+            const btn = e.target.closest('[data-range]');
+            if (!btn || btn.dataset.range === currentRange) return;
+            currentRange = btn.dataset.range;
+            try { localStorage.setItem('tt.range', currentRange); } catch (err) {}
+            syncRangeButtons();
+            renderDashboard();
+        });
+
+        // "Latest trading day" strip: always the most recent day vs. the day before,
+        // whatever range the charts are showing.
+        function updateLatestDayStrip(trades) {
+            const byDay = {};
+            trades.forEach(t => { if (t.entry_datetime) (byDay[dayOf(t)] = byDay[dayOf(t)] || []).push(t); });
+            const dates = Object.keys(byDay).sort();
+            if (!dates.length) return;
+
+            let n = 0, wins = 0, rrSum = 0, plSum = 0;
+            const winRate = [], avgRR = [], ev = [], equity = [];
+            dates.forEach(d => {
+                byDay[d].forEach(t => {
+                    const pl = pnlOf(t);
+                    n++; plSum += pl; rrSum += parseFloat(t.risk_reward_str) || 0;
+                    if (pl > 0) wins++;
+                });
+                winRate.push(wins / n * 100); avgRR.push(rrSum / n); ev.push(plSum / n); equity.push(parseFloat(plSum.toFixed(2)));
+            });
+
+            const lastChange = arr => {
+                if (arr.length < 2) return 0;
+                const prev = arr[arr.length - 2], val = arr[arr.length - 1];
+                if (prev === 0) return val === 0 ? 0 : 100;
+                return parseFloat((((val - prev) / Math.abs(prev)) * 100).toFixed(2));
+            };
+            const setPct = (id, v) => {
+                const el = document.getElementById(id);
+                el.innerText = `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+                el.className = `stat-value ${v >= 0 ? 'text-success' : 'text-danger'}`;
+            };
+            setPct('statDailyWinRateChange', lastChange(winRate));
+            setPct('statDailyRRChange', lastChange(avgRR));
+            setPct('statDailyEVChange', lastChange(ev));
+            setPct('statDailyBalanceChange', lastChange(equity));
+
+            const latest = dates[dates.length - 1];
+            const latestPL = byDay[latest].reduce((s, t) => s + pnlOf(t), 0);
+            document.getElementById('latestDayLabel').innerText =
+                dateFromKey(latest).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+            const plEl = document.getElementById('statDailyPL');
+            plEl.innerText = fmtMoney(latestPL, true);
+            plEl.className = `stat-value ${latestPL >= 0 ? 'text-success' : 'text-danger'}`;
+        }
+
+        function renderDashboard() {
+            const { data, label } = applyRange(allTrades, currentRange);
+            document.getElementById('rangeLabel').innerText = label;
+            updateLatestDayStrip(allTrades);
+            renderCharts(data);
+        }
+
         async function fetchAndRenderData() {
             const response = await fetch('/api/trades');
-            const data = await response.json();
+            allTrades = await response.json();
+            syncRangeButtons();
+            renderDashboard();
+        }
 
-            // A trade belongs to the day it was CLOSED (falls back to entry day).
-            const dayOf = t => String(t.exit_datetime || t.entry_datetime || '').split(/[T ]/)[0];
-            const pnlOf = t => (parseFloat(t.risk_val) || 0) * (parseFloat(t.risk_reward_str) || 0);
-
+        // Stats cards and all seven charts for the trades in the chosen range.
+        function renderCharts(data) {
             // Track unique trading days
             const uniqueTradingDays = new Set();
 
@@ -458,44 +565,6 @@
             const equityDates = Object.keys(dailyEquityMap).sort();
             const dailyEquities = equityDates.map(date => dailyEquityMap[date]);
             const dailyBalancePctChanges = computePercentageChanges(dailyEquities);
-
-            // Update the Summary Cards with the latest day's values
-            if (metricDates.length > 0) {
-                const latestIdx = metricDates.length - 1;
-
-                const wrChange = dailyWinRatePctChanges[latestIdx];
-                const wrEl = document.getElementById('statDailyWinRateChange');
-                wrEl.innerText = `${wrChange >= 0 ? '+' : ''}${wrChange.toFixed(2)}%`;
-                wrEl.className = `stat-value ${wrChange >= 0 ? 'text-success' : 'text-danger'}`;
-
-                const rrChange = dailyRRPctChanges[latestIdx];
-                const rrEl = document.getElementById('statDailyRRChange');
-                rrEl.innerText = `${rrChange >= 0 ? '+' : ''}${rrChange.toFixed(2)}%`;
-                rrEl.className = `stat-value ${rrChange >= 0 ? 'text-success' : 'text-danger'}`;
-
-                const evChange = dailyEVPctChanges[latestIdx];
-                const evEl = document.getElementById('statDailyEVChange');
-                evEl.innerText = `${evChange >= 0 ? '+' : ''}${evChange.toFixed(2)}%`;
-                evEl.className = `stat-value ${evChange >= 0 ? 'text-success' : 'text-danger'}`;
-            }
-
-            if (equityDates.length > 0) {
-                const latestEqIdx = equityDates.length - 1;
-                const balanceChange = dailyBalancePctChanges[latestEqIdx];
-                const balanceEl = document.getElementById('statDailyBalanceChange');
-                balanceEl.innerText = `${balanceChange >= 0 ? '+' : ''}${balanceChange.toFixed(2)}%`;
-                balanceEl.className = `stat-value ${balanceChange >= 0 ? 'text-success' : 'text-danger'}`;
-            }
-
-            if (sortedDates.length > 0) {
-                const latestDate = sortedDates[sortedDates.length - 1];
-                const latestPL = dailyPLMap[latestDate];
-                document.getElementById('latestDayLabel').innerText =
-                    new Date(latestDate + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-                const plEl = document.getElementById('statDailyPL');
-                plEl.innerText = fmtMoney(latestPL, true);
-                plEl.className = `stat-value ${latestPL >= 0 ? 'text-success' : 'text-danger'}`;
-            }
 
             const commonTooltipOptions = {
                 plugins: {
