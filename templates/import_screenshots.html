@@ -200,16 +200,16 @@
                 <div class="col-md-6">
                     <label class="form-label small mb-1">&ldquo;Risk under 0.5%?&rdquo; for these trades</label>
                     <select name="answer_risk" class="form-select form-select-sm">
-                        <option value="no" selected>No ({{ '%+g' | format(points.risk[1]) }} points)</option>
-                        <option value="yes">Yes ({{ '%+g' | format(points.risk[0]) }} points)</option>
+                        <option value="no">No ({{ '%+g' | format(points.risk[1]) }} points)</option>
+                        <option value="yes" selected>Yes ({{ '%+g' | format(points.risk[0]) }} points)</option>
                         <option value="blank">Leave unanswered (0 points)</option>
                     </select>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label small mb-1">&ldquo;Daily drawdown under 1.5%?&rdquo; for these trades</label>
                     <select name="answer_daily" class="form-select form-select-sm">
-                        <option value="no" selected>No ({{ '%+g' | format(points.daily[1]) }} points)</option>
-                        <option value="yes">Yes ({{ '%+g' | format(points.daily[0]) }} points)</option>
+                        <option value="no">No ({{ '%+g' | format(points.daily[1]) }} points)</option>
+                        <option value="yes" selected>Yes ({{ '%+g' | format(points.daily[0]) }} points)</option>
                         <option value="blank">Leave unanswered (0 points)</option>
                     </select>
                 </div>
