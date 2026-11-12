@@ -9,6 +9,8 @@ from flask import Flask, jsonify, redirect, render_template, request, send_file,
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 
+from emotions import EMOTIONS, ZONES, chart_meta, clean_emotions, zone_for
+
 app = Flask(__name__)
 
 # Configure SQLite database (PythonAnywhere path compatible)
@@ -54,6 +56,16 @@ class Trade(db.Model):
     # When the trade was closed, e.g. 2026-10-09T13:30:05. Optional: the
     # equity chart is drawn in exit-time order and falls back to the entry time.
     exit_datetime = db.Column(db.String(50), nullable=True)
+    # 1-10 emotion ratings as JSON, e.g. {"greed": 6, "fear": 3}. A missing key
+    # means "not rated". The scales themselves live in emotions.py.
+    emotions_json = db.Column(db.Text, nullable=True)
+
+    @property
+    def emotions(self):
+        try:
+            return clean_emotions(json.loads(self.emotions_json or '{}'))
+        except (TypeError, ValueError):
+            return {}
 
     @property
     def psychology_flags(self):
@@ -322,6 +334,11 @@ def ensure_schema():
             db.session.execute(
                 text('ALTER TABLE trade ADD COLUMN exit_datetime VARCHAR(50)')
             )
+        # Emotion ratings: don't affect any score, so no re-score either.
+        if 'emotions_json' not in columns:
+            db.session.execute(
+                text('ALTER TABLE trade ADD COLUMN emotions_json TEXT')
+            )
         for name, ddl in [
             ('daily_risk_score', 'REAL DEFAULT 0.0'),
             ('psychology_score', 'REAL DEFAULT 0.0'),
@@ -469,6 +486,9 @@ def inject_accounts():
         'accounts': Account.query.order_by(Account.id.asc()).all(),
         'active_account': get_active_account(),
         'account_summary': account_summary,
+        'emotion_scales': EMOTIONS,
+        'emotion_zones': ZONES,
+        'emotion_zone': zone_for,
     }
 
 
@@ -1310,8 +1330,8 @@ def add_new_trades(account):
     """Step 2 of confirming: create the ticked rows as new trades."""
     answers = {}
     for field in ('answer_risk', 'answer_daily'):
-        choice = request.form.get(field, 'no')
-        answers[field] = choice if choice in ('yes', 'no', 'blank') else 'no'
+        choice = request.form.get(field, 'yes')
+        answers[field] = choice if choice in ('yes', 'no', 'blank') else 'yes'
 
     ordered = [
         (t, parse_entry_datetime(t.entry_datetime))
@@ -1404,7 +1424,7 @@ def apply_import():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', emotion_meta=chart_meta())
 
 
 @app.route('/new-trade')
@@ -1473,7 +1493,7 @@ def export_trades():
     headers = [
         'ID', 'Ticker', 'Entry Date/Time', 'Exit Date/Time', 'Setup', '1/3 Profit',
         'SL Zero', 'Risk ($)', 'R:R', 'Profit / Loss ($)', 'Risk < 0.5%',
-        'Daily DD < 1.5%', 'Psychology', 'Equity', 'Total Score', 'Chart',
+        'Daily DD < 1.5%', 'Psychology', 'Equity', 'Total Score', 'Chart', 'Emotions (1-10)',
     ]
     ws.append(headers)
     for cell in ws[1]:
@@ -1510,8 +1530,11 @@ def export_trades():
             cell = put_text(r, 16, t.screenshot_url)
             if t.screenshot_url.lower().startswith(('http://', 'https://')):
                 cell.hyperlink = t.screenshot_url
+        put_text(r, 17, '; '.join(
+            f"{e['label']} {t.emotions[e['key']]}" for e in EMOTIONS if e['key'] in t.emotions
+        ))
 
-    widths = [7, 12, 20, 20, 10, 10, 9, 10, 8, 16, 12, 15, 22, 12, 12, 45]
+    widths = [7, 12, 20, 20, 10, 10, 9, 10, 8, 16, 12, 15, 22, 12, 12, 45, 34]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = 'A2'
@@ -1564,6 +1587,7 @@ def edit_trade(id):
         trade.revenge_trading_str = data.get('revenge_trading', 'no')
         trade.impatient_trading_str = data.get('impatient_trading', 'no')
         trade.fearful_trading_str = data.get('fearful_trading', 'no')
+        trade.emotions_json = json.dumps(clean_emotions(data)) if clean_emotions(data) else None
 
         trade.screenshot_url = request.form.get('screenshot_url', '').strip() or None
 
@@ -1586,6 +1610,7 @@ def manage_trades():
     if request.method == 'POST':
         data = request.json
         scores = calculate_scores(data)
+        rated = clean_emotions(data.get('emotions') or {})
         account = get_active_account()
         max_pos = (
             db.session.query(db.func.max(Trade.position))
@@ -1611,7 +1636,8 @@ def manage_trades():
             revenge_trading_str=data.get('revenge_trading', 'no'),
             impatient_trading_str=data.get('impatient_trading', 'no'),
             fearful_trading_str=data.get('fearful_trading', 'no'),
-            screenshot_url=data.get('screenshot_url', '').strip() or None,
+            emotions_json=json.dumps(rated) if rated else None,
+            screenshot_url=(data.get('screenshot_url') or '').strip() or None,
             setup_score=scores['setup_score'],
             profit_score=scores['profit_score'],
             stop_loss_score=scores['stop_loss_score'],
@@ -1646,6 +1672,7 @@ def manage_trades():
                 float(t.risk_reward_str) if t.risk_reward_str else 0.0
             ),
             'total_score': t.total_score,
+            'emotions': t.emotions,
         })
     return jsonify(result)
 

@@ -129,6 +129,24 @@
                     </div>
                 </div>
 
+                <!-- Emotions (1-10) -->
+                <div class="card shadow-sm p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="card-title m-0">Emotions <small class="text-muted fs-6">(1&ndash;10, rated trades only. Click a name to show or hide it)</small></h4>
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resizeChart('emotionWrapper', 'small', event)">Small</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm active" onclick="resizeChart('emotionWrapper', 'medium', event)">Medium</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resizeChart('emotionWrapper', 'large', event)">Large</button>
+                        </div>
+                    </div>
+                    <div class="chart-container medium" id="emotionWrapper">
+                        <canvas id="emotionChart"></canvas>
+                    </div>
+                    <p class="text-muted small mb-0" id="emotionEmpty" hidden>
+                        No emotion ratings in this period yet. Rate them under &ldquo;Emotions&rdquo; when you log or edit a trade.
+                    </p>
+                </div>
+
                 <!-- Chart 2: Risk Amount -->
                 <div class="card shadow-sm p-4">
                     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -231,6 +249,8 @@
         let dailyWinRateChartInstance = null;
         let dailyRRChartInstance = null;
         let dailyEVChartInstance = null;
+        let emotionChartInstance = null;
+        const EMOTION_META = {{ emotion_meta | tojson }};
 
         // -$1,234.56 / +$1,234.56 (sign first, thousands separators)
         function fmtMoney(v, withPlus) {
@@ -262,6 +282,7 @@
             else if (wrapperId === 'dailyWinRateWrapper' && dailyWinRateChartInstance) dailyWinRateChartInstance.resize();
             else if (wrapperId === 'dailyRRWrapper' && dailyRRChartInstance) dailyRRChartInstance.resize();
             else if (wrapperId === 'dailyEVWrapper' && dailyEVChartInstance) dailyEVChartInstance.resize();
+            else if (wrapperId === 'emotionWrapper' && emotionChartInstance) emotionChartInstance.resize();
         }
 
         // A trade belongs to the day it was CLOSED (falls back to entry day).
@@ -851,6 +872,88 @@
                     }
                 }
             });
+
+            // Emotions: one line per emotion that has at least one rating, in exit order.
+            // Zones follow the deck's checklist: 1-3 green, 4-6 yellow, 7-10 red.
+            // Only trades with at least one rating are plotted.
+            const ratedTrades = byExit.filter(t => t.emotions && Object.keys(t.emotions).length > 0);
+            const ratedLabels = ratedTrades.map(t => t.exit_datetime
+                ? shortTime(t.exit_datetime)
+                : `${shortTime(t.entry_datetime)} (no exit time)`);
+            const emotionSets = EMOTION_META
+                .map(meta => ({
+                    label: meta.label,
+                    data: ratedTrades.map(t => (t.emotions && t.emotions[meta.key]) || null),
+                    borderColor: meta.color,
+                    backgroundColor: meta.color,
+                    pointStyle: meta.point,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    borderWidth: 2,
+                    tension: 0,
+                    spanGaps: true
+                }))
+                .filter(set => set.data.some(v => v !== null));
+
+            const emotionZones = {
+                id: 'emotionZones',
+                beforeDatasetsDraw(chart) {
+                    const { ctx, chartArea, scales } = chart;
+                    if (!chartArea || !scales.y) return;
+                    [[0, 3.5, 'rgba(15, 138, 95, 0.07)'], [3.5, 6.5, 'rgba(183, 121, 31, 0.09)'], [6.5, 10.5, 'rgba(194, 59, 59, 0.07)']]
+                        .forEach(([low, high, colour]) => {
+                            const top = scales.y.getPixelForValue(high);
+                            const bottom = scales.y.getPixelForValue(low);
+                            ctx.save();
+                            ctx.fillStyle = colour;
+                            ctx.fillRect(chartArea.left, top, chartArea.right - chartArea.left, bottom - top);
+                            ctx.restore();
+                        });
+                }
+            };
+
+            document.getElementById('emotionWrapper').hidden = emotionSets.length === 0;
+            document.getElementById('emotionEmpty').hidden = emotionSets.length > 0;
+            if (emotionChartInstance) { emotionChartInstance.destroy(); emotionChartInstance = null; }
+            if (emotionSets.length > 0) {
+                emotionChartInstance = new Chart(document.getElementById('emotionChart').getContext('2d'), {
+                    type: 'line',
+                    data: { labels: ratedLabels, datasets: emotionSets },
+                    plugins: [emotionZones],
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'nearest', intersect: true },
+                        scales: {
+                            x: { title: { display: true, text: 'Exit time' } },
+                            y: {
+                                min: 0,
+                                max: 10.5,
+                                // exactly the ten levels, 1 to 10
+                                afterBuildTicks: scale => {
+                                    scale.ticks = Array.from({ length: 10 }, (_, i) => ({ value: i + 1 }));
+                                },
+                                title: { display: true, text: 'Level (1 = slight, 10 = most intense)' }
+                            }
+                        },
+                        plugins: {
+                            legend: { position: 'top' },
+                            tooltip: {
+                                callbacks: {
+                                    title: function(context) {
+                                        const t = ratedTrades[context[0].dataIndex];
+                                        const when = t.exit_datetime
+                                            ? `exit ${t.exit_datetime.replace('T', ' ')}`
+                                            : 'no exit time';
+                                        return `${t.ticker} (${when})`;
+                                    },
+                                    label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}`
+                                }
+                            }
+                        }
+                    }
+                });
+            }
         }
 
         fetchAndRenderData();

@@ -120,6 +120,8 @@
                                 <option value="yes" {% if trade.fearful_trading_str == 'yes' %}selected{% endif %}>Yes</option>
                             </select>
                         </div>
+                        {% set emotion_selected = trade.emotions %}{% set emotion_number = '15' %}
+                        {% include '_emotion_inputs.html' %}
                         <div class="mb-3">
                             <label for="screenshot_url" class="form-label">Screenshot Link (URL)</label>
                             <input type="url" class="form-label form-control" id="screenshot_url" name="screenshot_url" placeholder="https://imgur.com/... or TradingView link" value="{{ trade.screenshot_url if trade else '' }}">

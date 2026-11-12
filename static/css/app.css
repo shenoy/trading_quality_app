@@ -422,3 +422,100 @@ h5 { font-size: 1.0625rem; font-weight: 600; }
 /* Cards that were forms: slightly tighter than Bootstrap's p-4 */
 .card.p-4 { padding: 1.5rem !important; }
 @media (max-width: 575.98px) { .card.p-4 { padding: 1.125rem !important; } }
+
+/* ---------- Emotion ratings (1-10) ---------- */
+.zone-green  { --zone: var(--tt-gain); --zone-soft: var(--tt-gain-soft); }
+.zone-yellow { --zone: var(--tt-warn); --zone-soft: var(--tt-warn-soft); }
+.zone-red    { --zone: var(--tt-loss); --zone-soft: var(--tt-loss-soft); }
+
+.emo-set { border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }
+.emo-set legend { float: none; width: auto; font-size: 0.875rem; }
+.emo-help { margin: 0.25rem 0 0.75rem; font-size: 0.85rem; color: var(--tt-ink-3); }
+.emo-legend { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+.emo-legend span {
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    background: var(--zone-soft);
+    color: var(--zone);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+details.emo { margin-bottom: 0.5rem; }
+.emo-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 2.5rem;
+    cursor: pointer;
+    list-style: none;
+}
+.emo-summary::-webkit-details-marker { display: none; }
+.emo[open] > .emo-summary { border-color: var(--tt-accent); box-shadow: 0 0 0 3px rgba(11, 85, 99, 0.18); }
+.emo-name { flex: 0 0 8.5rem; font-weight: 600; }
+.emo-current {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--tt-ink-3);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.emo-current.is-set { color: var(--tt-ink); }
+
+.emo-panel {
+    max-height: 26rem;
+    margin-top: 0.35rem;
+    overflow: auto;
+    border: 1px solid var(--tt-line);
+    border-radius: var(--tt-radius-control);
+    background: var(--tt-surface);
+}
+.emo-row {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0.65rem 0.75rem;
+    border-bottom: 1px solid var(--tt-line-soft);
+    border-left: 3px solid var(--zone, transparent);
+    cursor: pointer;
+}
+.emo-row:hover { background: var(--tt-wash); }
+.emo-row:has(input:checked) { background: var(--tt-accent-soft); }
+.emo-row:has(input:focus-visible) { outline: 2px solid var(--tt-accent); outline-offset: -2px; }
+.emo-row input { position: absolute; opacity: 0; pointer-events: none; }
+.emo-num {
+    display: grid;
+    flex: 0 0 1.75rem;
+    height: 1.75rem;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--zone-soft, var(--tt-wash));
+    color: var(--zone, var(--tt-ink-3));
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+.emo-text { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; line-height: 1.4; }
+.emo-text > span { display: grid; grid-template-columns: 5.25rem minmax(0, 1fr); gap: 0.5rem; }
+.emo-text b { color: var(--tt-ink-3); font-size: 0.75rem; font-weight: 600; }
+.emo-row-none .emo-text > span { display: block; }
+.emo-note { margin: 0; padding: 0.6rem 0.75rem; font-size: 0.8rem; color: var(--tt-ink-2); }
+.emo-source { color: var(--tt-ink-3); }
+@media (max-width: 575.98px) {
+    .emo-name { flex-basis: 6rem; }
+    .emo-text > span { grid-template-columns: 1fr; gap: 0; }
+}
+
+/* Chips in the trades table */
+.emo-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; min-width: 11rem; white-space: normal; }
+.emo-chip {
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: var(--zone-soft);
+    color: var(--zone);
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}

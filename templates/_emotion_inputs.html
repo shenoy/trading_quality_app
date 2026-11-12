@@ -1,0 +1,47 @@
+{# Emotion ratings (1-10). Expects `emotion_selected`: {emotion_key: level} #}
+<fieldset class="emo-set">
+    <legend class="form-label">{{ emotion_number | default('15') }}) Emotions (1&ndash;10) <span class="text-muted fw-normal">optional</span></legend>
+    <p class="emo-help">
+        Rate how strong each emotion was during this trade. Level 1 is the slightest nudge and 10 your most
+        intense version. Judge against your own range. Open a dropdown to read what each level looks like,
+        mentally and technically.
+    </p>
+    <div class="emo-legend" aria-label="Zones">
+        {% for low, high, name, text in emotion_zones %}
+        <span class="zone-{{ name }}" title="{{ text }}">{{ low }}&ndash;{{ high }} {{ name | capitalize }}</span>
+        {% endfor %}
+    </div>
+
+    {% for e in emotion_scales %}
+    {% set cur = emotion_selected.get(e.key) %}
+    <details class="emo" data-key="{{ e.key }}">
+        <summary class="form-select emo-summary">
+            <span class="emo-name">{{ e.label }}</span>
+            <span class="emo-current{% if cur %} is-set{% endif %}">{% if cur %}{{ cur }} &middot; {{ e.levels[cur - 1][0] }}{% else %}Not rated{% endif %}</span>
+        </summary>
+        <div class="emo-panel" role="radiogroup" aria-label="{{ e.label }} level">
+            <label class="emo-row emo-row-none">
+                <input type="radio" name="emo_{{ e.key }}" value="" data-mental="" {% if not cur %}checked{% endif %}>
+                <span class="emo-num">&ndash;</span>
+                <span class="emo-text"><span>Not rated</span></span>
+            </label>
+            {% for mental, technical in e.levels %}
+            {% set n = loop.index %}
+            <label class="emo-row zone-{{ emotion_zone(n) }}">
+                <input type="radio" name="emo_{{ e.key }}" value="{{ n }}" data-mental="{{ mental }}" {% if cur == n %}checked{% endif %}>
+                <span class="emo-num">{{ n }}</span>
+                <span class="emo-text">
+                    <span><b>Mental</b><span>{{ mental }}</span></span>
+                    <span><b>Technical</b><span>{{ technical }}</span></span>
+                </span>
+            </label>
+            {% endfor %}
+            {% if e.logic %}
+            <p class="emo-note">From level 4 up, read aloud: &ldquo;{{ e.logic }}&rdquo;</p>
+            {% endif %}
+            <p class="emo-note emo-source">{{ e.source }}{% if e.drafted %}. Drafted from the deck, so rewrite it in your own words{% endif %}.</p>
+        </div>
+    </details>
+    {% endfor %}
+</fieldset>
+<script src="{{ url_for('static', filename='js/emotion-picker.js') }}"></script>

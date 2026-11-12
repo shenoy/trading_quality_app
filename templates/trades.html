@@ -52,6 +52,7 @@
                             <th>Risk &lt; 0.5%</th>
                             <th>Daily DD &lt; 1.5%</th>
                             <th>Psychology</th>
+                            <th>Emotions</th>
                             <th>Equity</th>
                             <th>Total Score</th>
                             <th>Chart</th>
@@ -89,6 +90,16 @@
                             <td>{{ (trade.risk_under_half_str or "-") | capitalize }}</td>
                             <td>{{ (trade.daily_risk_str or "-") | capitalize }}</td>
                             <td>{{ trade.psychology_flags | join(", ") or "-" }}</td>
+                            <td>
+                                {% if trade.emotions %}
+                                <div class="emo-chips">
+                                    {% for e in emotion_scales if e.key in trade.emotions %}
+                                    {% set lvl = trade.emotions[e.key] %}
+                                    <span class="emo-chip zone-{{ emotion_zone(lvl) }}" title="{{ e.label }} {{ lvl }}/10">{{ e.label }} {{ lvl }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% else %}-{% endif %}
+                            </td>
                             <td>${{ "%.2f"|format(trade.current_equity) }}</td>
                             <td><span class="badge bg-success">{{ trade.total_score }}</span></td>
                             <td>
@@ -109,7 +120,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="18" class="text-center text-muted py-4">No trades logged yet.</td>
+                            <td colspan="19" class="text-center text-muted py-4">No trades logged yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
